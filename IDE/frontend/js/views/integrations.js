@@ -10,7 +10,7 @@
 
     root.appendChild(UI.head(
       "Integrations",
-      "Conecta sistemas externos" +
+      "Conecta sistemas externos.<br>" +
       "«Probar» lanza una petición HTTP de verdad (max_tokens=1) y devuelve el código del proveedor.",
       [
         UI.btn("Probar todos", async (event) => {

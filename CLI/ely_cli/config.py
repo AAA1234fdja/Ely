@@ -174,6 +174,7 @@ class Profile:
             "provider": self.provider,
             "model": self.model,
             "base_url": self.base_url,
+            "endpoint": self.endpoint(),
             "key_var": self.key_var,
             "has_key": self.has_key,
             "masked_key": self.masked_key,

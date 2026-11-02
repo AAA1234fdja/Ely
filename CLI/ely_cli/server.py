@@ -270,7 +270,7 @@ class ElyHandler(BaseHTTPRequestHandler):
             if not prompt:
                 raise ApiError(400, "El campo 'prompt' es obligatorio")
             history = body.get("history") if isinstance(body.get("history"), list) else []
-            context = engine.build_context() if body.get("use_memory") else None
+            context = engine.request_context(body.get("context"), bool(body.get("use_memory")))
             return self.json(engine.ask(
                 prompt,
                 profile_id=body.get("profile"),
@@ -287,7 +287,7 @@ class ElyHandler(BaseHTTPRequestHandler):
             if not prompt:
                 raise ApiError(400, "El campo 'prompt' es obligatorio")
             history = body.get("history") if isinstance(body.get("history"), list) else []
-            context = engine.build_context() if body.get("use_memory") else None
+            context = engine.request_context(body.get("context"), bool(body.get("use_memory")))
             return self.sse(engine.stream(
                 prompt,
                 profile_id=body.get("profile"),
@@ -383,8 +383,8 @@ class ElyHandler(BaseHTTPRequestHandler):
             except repos.RepoError as exc:
                 raise ApiError(exc.status, str(exc)) from exc
 
-        if method == "DELETE" and parts[:3] == ["api", "repos", "remove"] or (
-            method == "DELETE" and len(parts) == 3 and parts[:2] == ["api", "repos"]
+        if method == "DELETE" and parts[:2] == ["api", "repos"] and (
+            len(parts) == 3 or (len(parts) == 4 and parts[2] == "remove")
         ):
             slug = parts[-1]
             try:

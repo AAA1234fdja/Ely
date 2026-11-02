@@ -204,6 +204,51 @@ class AgentsTest(unittest.TestCase):
                 self.assertIn("{", template)
 
 
+class FrontendContractTest(unittest.TestCase):
+    """Regresiones del contrato frontend ↔ backend (vistas de IDE/frontend)."""
+
+    def test_public_profile_includes_endpoint(self):
+        # chat.js muestra profile.endpoint en el estado vacío del chat.
+        data = get_profile("groq", ROOT).public()
+        self.assertEqual(data["endpoint"], "https://api.groq.com/openai/v1/chat/completions")
+        self.assertNotIn("api_key", data)
+
+    def test_request_context_merges_client_and_memory(self):
+        # ide.js envía el archivo abierto como `context`; el servidor debe
+        # inyectarlo junto con la memoria, no descartarlo.
+        engine = Engine(ROOT)
+        only_client = engine.request_context("Archivo demo.py:\nprint('hola')", use_memory=False)
+        self.assertIn("demo.py", only_client)
+        self.assertIsNone(engine.request_context(None, use_memory=False))
+        self.assertIsNone(engine.request_context("   ", use_memory=False))
+        messages = engine.build_messages("revisa", context=only_client)
+        self.assertTrue(any(m["role"] == "system" and "demo.py" in m["content"] for m in messages))
+
+    def test_workspace_tree_reaches_frontend_js(self):
+        # ide.js pide depth=5; el árbol debe llegar a IDE/frontend/js/views.
+        data = workspace.tree(ROOT, depth=5)
+        paths = {e["path"] for e in data["entries"]}
+        self.assertIn("IDE/frontend/js/app.js", paths)
+        self.assertIn("IDE/frontend/js/views/ide.js", paths)
+        self.assertFalse(data["truncated"])
+
+    def test_types_core_and_mcp_router(self):
+        # MCPs/mcp_router.py importa types_core desde la raíz del repo.
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("ely_mcp_router", ROOT / "MCPs" / "mcp_router.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        summary = module.mcp_router.get_capabilities_summary()
+        self.assertIn("harnesses", summary)
+        self.assertIn("mcp_servers", summary)
+        from types_core import HarnessType, TaskStep
+
+        step = TaskStep(title="Buscar en el repositorio", objective="git código", required_mcps=["github"])
+        self.assertIsInstance(module.mcp_router.route_harness_for_task("terminal"), HarnessType)
+        self.assertIsInstance(module.mcp_router.select_tools_for_step(step), list)
+
+
 class BackendDiscoveryTest(unittest.TestCase):
     def test_mcp_status_is_truthful(self):
         status = mcp.discover(ROOT)

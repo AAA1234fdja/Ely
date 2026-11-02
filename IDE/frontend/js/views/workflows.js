@@ -11,7 +11,7 @@
 
     root.appendChild(UI.head(
       "Workflows",
-      "Define, edita y ejecuta flujos" +
+      "Define, edita y ejecuta flujos.<br>" +
       "Todas las llamadas son HTTP reales contra el perfil activo.",
       []
     ));

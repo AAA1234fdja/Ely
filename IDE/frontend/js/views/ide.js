@@ -149,7 +149,7 @@
       const openDirs = state.source === "repo"
         ? new Set(["src", "src/vs", "src/vs/editor", "src/vs/workbench", "extensions", "cli"])
         : new Set(["CLI", "IDE", "IDE/frontend", "IDE/frontend/js", "IDE/frontend/js/views",
-                   "profiles", "Harness", "MCPs"]);
+                   "profiles", "Harness", "Harness-Candy", "MCPs"]);
 
       entries.forEach((entry) => {
         const depth = entry.path.split("/").length - 1;
@@ -186,7 +186,7 @@
 
     async function loadTree() {
       try {
-        state.tree = await API.tree(3);
+        state.tree = await API.tree(5);
         renderTree();
         updateStatus();
       } catch (err) {
@@ -267,9 +267,10 @@
         status.appendChild(UI.el("span", { text: UI.bytes(doc.size) }));
       }
       status.appendChild(UI.el("span", { text: state.dirty[state.active] ? "sin guardar" : "guardado" }));
+      const activeTree = state.source === "repo" ? state.repoTree : state.tree;
       const scopeLabel = state.source === "repo"
-        ? (state.repo || "repositorio") + " · " + (state.tree ? state.tree.counts.files : 0) + " archivos"
-        : "workspace real · " + (state.tree ? state.tree.counts.files : 0) + " archivos";
+        ? (state.repo || "repositorio") + " · " + (activeTree && activeTree.counts ? activeTree.counts.files : 0) + " archivos"
+        : "workspace real · " + (activeTree && activeTree.counts ? activeTree.counts.files : 0) + " archivos";
       status.appendChild(UI.el("span", { style: { marginLeft: "auto" }, text: scopeLabel }));
     }
 

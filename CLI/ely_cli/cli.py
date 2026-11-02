@@ -397,10 +397,12 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     checks.append(((root / "CLI").is_dir(), "CLI/", "código de la CLI y del servidor"))
     checks.append(((root / "IDE" / "frontend" / "index.html").is_file(), "IDE/frontend/index.html",
                    "interfaz web"))
-    checks.append(((root / "Harness").is_dir(), "Harness/", "backend de rutinas (solo lectura)"))
+    harness_dir = next((root / name for name in ("Harness", "Harness-Candy") if (root / name).is_dir()), None)
+    harness_label = (harness_dir.name + "/") if harness_dir else "Harness/"
+    checks.append((harness_dir is not None, harness_label, "backend de rutinas (solo lectura)"))
     checks.append(((root / "MCPs").is_dir(), "MCPs/", "backend de herramientas (solo lectura)"))
-    if (root / "Harness").is_dir() and not any((root / "Harness").iterdir()):
-        checks[-2] = (True, "Harness/", "existe pero vacío — Ely no lo simula")
+    if harness_dir is not None and not any(harness_dir.iterdir()):
+        checks[-2] = (True, harness_label, "existe pero vacío — Ely no lo simula")
     if (root / "MCPs").is_dir() and not any((root / "MCPs").iterdir()):
         checks[-1] = (True, "MCPs/", "existe pero vacío — Ely no lo simula")
     profiles = load_profiles(root)

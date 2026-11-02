@@ -376,7 +376,8 @@
         const data = await API.routes();
         if (data && Array.isArray(data.nav) && data.nav.length) {
           NAV = data.nav;
-          TITLES = {};
+          /* Fusiona sin borrar: rutas fuera del nav (p. ej. "chat") conservan
+             su título de respaldo. */
           data.nav.forEach((group) => (group.items || []).forEach((item) => {
             TITLES[item.id] = [item.label, item.desc || ""];
           }));

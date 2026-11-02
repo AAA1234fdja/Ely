@@ -20,7 +20,10 @@ TEXT_EXT = {
     ".rs", ".go", ".java", ".c", ".h", ".cpp", ".sql", ".svg", ".csv", ".lock", "",
 }
 MAX_FILE = 400_000
-MAX_ENTRIES = 900
+# El árbol del workspace ahora incluye IDE/ con el código de VS Code; con 900
+# entradas el árbol se truncaba antes de llegar a IDE/frontend. 6000 cubre el
+# repo completo a profundidad 5 (~3800 entradas) sin truncar.
+MAX_ENTRIES = 6000
 
 
 class WorkspaceError(RuntimeError):

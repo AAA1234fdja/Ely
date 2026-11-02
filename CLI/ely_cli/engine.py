@@ -51,6 +51,20 @@ class Engine:
         self._write_json("state.json", state)
 
     # ------------------------------------------------------------------ chat
+    def request_context(self, client_context: Any = None, use_memory: bool = False) -> str | None:
+        """Combina el contexto que envía el frontend (p. ej. el archivo abierto
+        en el IDE) con las notas de memoria. Antes el servidor descartaba el
+        contexto del cliente; ahora ambos llegan al modelo como mensaje system.
+        """
+        parts: list[str] = []
+        if isinstance(client_context, str) and client_context.strip():
+            parts.append(client_context.strip())
+        if use_memory:
+            memory = self.build_context()
+            if memory:
+                parts.append(memory)
+        return "\n\n".join(parts) or None
+
     def build_messages(
         self,
         prompt: str,

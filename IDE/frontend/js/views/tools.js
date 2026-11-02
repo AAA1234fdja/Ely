@@ -60,6 +60,7 @@
           UI.badge(tool.group, "info"),
           UI.badge(data.available ? "MCP conectado" : "sin MCP", data.available ? "ok" : "")
         ]));
+        grid.appendChild(card);
       });
       if (!(data.tools || []).length) grid.appendChild(UI.empty("⚒", "El backend no declaró herramientas"));
     }).catch((err) => {
