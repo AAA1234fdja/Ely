@@ -18,8 +18,13 @@
     pinned: false,
     busy: false,
     messages: [],
+    profile: null,
     sessionId: "w_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4)
   };
+
+  function newSessionId() {
+    return "w_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+  }
 
   let App = null;
   let fab = null;
@@ -66,6 +71,16 @@
 
   /* ------------------------------------------------------- abrir / cerrar */
   function open() {
+    /* La conversación del widget es por perfil: si cambió el perfil activo,
+       se empieza de cero para no mezclar lo hablado en otro perfil. */
+    const currentProfile = App ? App.profileId() : null;
+    if (state.profile !== currentProfile) {
+      state.profile = currentProfile;
+      if (!state.busy) {
+        state.messages = [];
+        state.sessionId = newSessionId();
+      }
+    }
     state.open = true;
     panel.classList.add("open");
     if (fab) fab.classList.add("active");
@@ -109,6 +124,13 @@
     if (!profile) {
       UI.toast("err", "Sin perfil", "Configura un perfil en Integraciones");
       return;
+    }
+    /* Si el perfil cambió con el panel abierto (fijado), no arrastrar la
+       conversación del perfil anterior. */
+    if (state.profile !== profile.id) {
+      state.profile = profile.id;
+      state.messages = [];
+      state.sessionId = newSessionId();
     }
 
     const agent = App.agent();

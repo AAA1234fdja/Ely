@@ -8,7 +8,8 @@
     sessions: [],
     busy: false,
     lastUsage: null,
-    title: "Nueva conversación"
+    title: "Nueva conversación",
+    profile: null
   };
 
   function newId() {
@@ -27,13 +28,14 @@
     const first = state.messages.find((m) => m.role === "user");
     const session = {
       id: state.sessionId,
+      profile: state.profile,
       title: (first ? first.content : "Conversación").slice(0, 70),
       messages: state.messages.map((m) => ({ role: m.role, content: m.content, meta: m.meta || null, error: m.error || null })),
       updated_at: new Date().toISOString()
     };
     try {
       await API.saveSession(session);
-      state.sessions = (await API.sessions()).sessions || [];
+      state.sessions = (await API.sessions(state.profile)).sessions || [];
     } catch (e) { /* la sesión local sigue viva aunque falle el guardado */ }
   }
 
@@ -76,6 +78,17 @@
   window.Views.chat = function (view, App) {
     const agent = App.agent();
     const profile = App.profile();
+
+    /* Cada perfil tiene su propia conversación: al cambiar de perfil se
+       empieza de cero y se cargan las sesiones guardadas de ese perfil. */
+    const currentProfile = App.profileId();
+    if (state.profile !== currentProfile) {
+      state.profile = currentProfile;
+      state.messages = [];
+      state.sessionId = newId();
+      state.sessions = [];
+      state.lastUsage = null;
+    }
 
     /* Conversación que llega desde el widget flotante al pulsar "expandir". */
     if (window.__elyWidgetHandoff) {
@@ -191,7 +204,7 @@
           style: { marginLeft: "auto", padding: "0 6px" },
           onclick: async (event) => {
             event.stopPropagation();
-            await API.deleteSession(session.id).catch(() => {});
+            await API.deleteSession(session.id, state.profile).catch(() => {});
             state.sessions = state.sessions.filter((s) => s.id !== session.id);
             if (session.id === state.sessionId) {
               state.messages = [];
@@ -424,7 +437,7 @@
       }
     });
     setTimeout(() => textarea && textarea.focus(), 40);
-    API.sessions().then((data) => {
+    API.sessions(state.profile).then((data) => {
       state.sessions = data.sessions || [];
       renderSessions();
     }).catch(() => {});

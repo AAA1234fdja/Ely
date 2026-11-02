@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 node_modules/
 .DS_Store
+
+# Local Storage: datos de usuario por perfil (no se versionan).
+# El README de la carpeta sí se versiona para documentar la estructura.
+Local Storage/*/

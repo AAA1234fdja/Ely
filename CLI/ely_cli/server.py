@@ -298,14 +298,27 @@ class ElyHandler(BaseHTTPRequestHandler):
             ))
 
         if method == "GET" and route == "/sessions":
-            return self.json({"sessions": engine.sessions()})
+            return self.json({"sessions": engine.sessions(self.query().get("profile"))})
 
         if method == "POST" and route == "/sessions":
             body = self.read_json()
             return self.json(engine.save_session(body))
 
         if method == "DELETE" and parts[:2] == ["api", "sessions"] and len(parts) == 3:
-            return self.json({"ok": engine.delete_session(parts[2])})
+            return self.json({"ok": engine.delete_session(parts[2], self.query().get("profile"))})
+
+        # Local Storage: archivos por perfil en dos categorías (generado / planeado).
+        if method == "GET" and route == "/storage":
+            return self.json(engine.storage_overview(self.query().get("profile")))
+
+        if method == "POST" and route == "/storage/planned":
+            body = self.read_json()
+            return self.json(engine.add_planned(
+                body.get("title"), body.get("note", ""), body.get("profile")
+            ))
+
+        if method == "DELETE" and parts[:3] == ["api", "storage", "planned"] and len(parts) == 4:
+            return self.json({"ok": engine.delete_planned(parts[3], self.query().get("profile"))})
 
         if method == "GET" and route == "/memory":
             return self.json({"memories": engine.memories()})

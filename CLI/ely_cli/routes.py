@@ -28,6 +28,8 @@ NAV: list[dict[str, Any]] = [
     {"group": "Operaciones", "items": [
         {"id": "assets", "label": "Asset Browser", "desc": "Archivos y activos del workflow",
          "icon": "◫", "title": "Asset Browser"},
+        {"id": "storage", "label": "Local Storage", "desc": "Archivos por perfil: generado y planeado",
+         "icon": "▣", "title": "Local Storage"},
         {"id": "repos", "label": "Repositories", "desc": "Importa repositorios Git al workspace",
          "icon": "⎇", "title": "Repositories"},
         {"id": "skillslib", "label": "Skills Library", "desc": "Capacidades operativas",

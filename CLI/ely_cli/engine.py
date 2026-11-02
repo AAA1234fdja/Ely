@@ -10,6 +10,7 @@ from typing import Any, Iterator
 from . import llm
 from .agents import Agent, get_agent
 from .config import ConfigError, Profile, get_profile, load_profiles, repo_root, state_dir
+from .storage import ProfileStorage
 
 
 def _now() -> str:
@@ -282,21 +283,43 @@ class Engine:
         }
 
     # ------------------------------------------------------------------ sesiones
-    def sessions(self) -> list[dict[str, Any]]:
-        return self._read_json("sessions.json", [])
+    # Las conversaciones viven en `Local Storage/<perfil>/generado/`: cada perfil
+    # (configuración de usuario) tiene su propia carpeta, de modo que lo que se
+    # habla en el perfil A no aparece en el perfil B.
+    def _storage(self, profile_id: str | None = None) -> ProfileStorage:
+        return ProfileStorage(self.root, profile_id)
 
-    def save_session(self, session: dict[str, Any]) -> dict[str, Any]:
-        sessions = [s for s in self.sessions() if s.get("id") != session.get("id")]
-        session["updated_at"] = _now()
-        sessions.insert(0, session)
-        self._write_json("sessions.json", sessions[:100])
-        return session
+    def _adopt_legacy(self, storage: ProfileStorage) -> None:
+        # Migra las sesiones globales antiguas solo al perfil por defecto.
+        if storage.profile.id == self.profile().id:
+            storage.migrate_legacy(self.state / "sessions.json")
 
-    def delete_session(self, session_id: str) -> bool:
-        sessions = self.sessions()
-        kept = [s for s in sessions if s.get("id") != session_id]
-        self._write_json("sessions.json", kept)
-        return len(kept) != len(sessions)
+    def sessions(self, profile_id: str | None = None) -> list[dict[str, Any]]:
+        storage = self._storage(profile_id)
+        self._adopt_legacy(storage)
+        return storage.sessions()
+
+    def save_session(self, session: dict[str, Any], profile_id: str | None = None) -> dict[str, Any]:
+        pid = profile_id or session.get("profile")
+        return self._storage(pid).save_session(session)
+
+    def delete_session(self, session_id: str, profile_id: str | None = None) -> bool:
+        return self._storage(profile_id).delete_session(session_id)
+
+    # ------------------------------------------------------------------ local storage
+    def storage_overview(self, profile_id: str | None = None) -> dict[str, Any]:
+        storage = self._storage(profile_id)
+        self._adopt_legacy(storage)
+        return storage.overview()
+
+    def planned_items(self, profile_id: str | None = None) -> list[dict[str, Any]]:
+        return self._storage(profile_id).planned_items()
+
+    def add_planned(self, title: str, note: str = "", profile_id: str | None = None) -> dict[str, Any]:
+        return self._storage(profile_id).add_planned(title, note)
+
+    def delete_planned(self, item_id: str, profile_id: str | None = None) -> bool:
+        return self._storage(profile_id).delete_planned(item_id)
 
     # ------------------------------------------------------------------ memoria
     def memories(self) -> list[dict[str, Any]]:

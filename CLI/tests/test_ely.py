@@ -266,5 +266,106 @@ class BackendDiscoveryTest(unittest.TestCase):
         self.assertEqual(doc["encoding"], "utf-8")
 
 
+class LocalStorageTest(unittest.TestCase):
+    """Local Storage por perfil: aislamiento, generado/planeado y migración.
+
+    Usa un root temporal con dos perfiles (alpha, beta) para no tocar los datos
+    reales del repo.
+    """
+
+    def setUp(self):
+        import tempfile
+        self.tmp = Path(tempfile.mkdtemp(prefix="ely-storage-"))
+        (self.tmp / "profiles").mkdir()
+        for pid in ("alpha", "beta"):
+            (self.tmp / "profiles" / f"{pid}.json").write_text(json.dumps({
+                "id": pid, "label": pid.title(), "provider": "openai",
+                "model": "gpt-4o-mini", "base_url": "http://localhost/v1",
+                "key_var": f"{pid.upper()}_API_KEY",
+            }), encoding="utf-8")
+        self.engine = Engine(self.tmp)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_folders_created_per_profile(self):
+        from ely_cli.storage import STORAGE_DIR, GENERATED, PLANNED
+        self.engine.sessions("alpha")
+        base = self.tmp / STORAGE_DIR / "alpha"
+        self.assertTrue((base / GENERATED).is_dir())
+        self.assertTrue((base / PLANNED).is_dir())
+
+    def test_sessions_isolated_per_profile(self):
+        self.engine.save_session({"id": "s1", "title": "Hola A", "messages": [{"role": "user", "content": "a"}]}, "alpha")
+        self.engine.save_session({"id": "s2", "title": "Hola B", "messages": [{"role": "user", "content": "b"}]}, "beta")
+        a = [s["id"] for s in self.engine.sessions("alpha")]
+        b = [s["id"] for s in self.engine.sessions("beta")]
+        self.assertEqual(a, ["s1"])
+        self.assertEqual(b, ["s2"])
+        self.assertNotIn("s2", a)  # lo de B no aparece en A
+
+    def test_save_session_uses_session_profile(self):
+        self.engine.save_session({"id": "s3", "profile": "beta", "title": "x", "messages": []})
+        self.assertEqual([s["id"] for s in self.engine.sessions("beta")], ["s3"])
+        self.assertEqual(self.engine.sessions("alpha"), [])
+
+    def test_delete_session_per_profile(self):
+        self.engine.save_session({"id": "s1", "messages": []}, "alpha")
+        self.assertTrue(self.engine.delete_session("s1", "alpha"))
+        self.assertEqual(self.engine.sessions("alpha"), [])
+        self.assertFalse(self.engine.delete_session("nope", "alpha"))
+
+    def test_planned_crud_and_isolation(self):
+        item = self.engine.add_planned("Comprar GPU", "para entrenar", "alpha")
+        self.assertEqual(item["title"], "Comprar GPU")
+        self.assertEqual(len(self.engine.planned_items("alpha")), 1)
+        self.assertEqual(self.engine.planned_items("beta"), [])
+        self.assertTrue(self.engine.delete_planned(item["id"], "alpha"))
+        self.assertEqual(self.engine.planned_items("alpha"), [])
+
+    def test_planned_requires_title(self):
+        from ely_cli.config import ConfigError
+        with self.assertRaises(ConfigError):
+            self.engine.add_planned("   ", "", "alpha")
+
+    def test_overview_structure(self):
+        self.engine.save_session({"id": "s1", "messages": []}, "alpha")
+        self.engine.add_planned("Plan", "", "alpha")
+        ov = self.engine.storage_overview("alpha")
+        self.assertEqual(ov["profile"], "alpha")
+        self.assertTrue(ov["path"].startswith("Local Storage"))
+        self.assertEqual(len(ov["generated"]["sessions"]), 1)
+        self.assertEqual(len(ov["planned"]["items"]), 1)
+        self.assertIsInstance(ov["generated"]["files"], list)
+        self.assertIsInstance(ov["planned"]["files"], list)
+
+    def test_unknown_profile_rejected(self):
+        from ely_cli.config import ConfigError
+        with self.assertRaises(ConfigError):
+            self.engine.sessions("no-existe")
+
+    def test_path_traversal_sanitized(self):
+        from ely_cli.storage import safe_profile_id
+        from ely_cli.config import ConfigError
+        self.assertEqual(safe_profile_id("a/b"), "a_b")
+        self.assertEqual(safe_profile_id("../etc"), "___etc")
+        self.assertEqual(safe_profile_id("openai"), "openai")
+        with self.assertRaises(ConfigError):
+            safe_profile_id("   ")
+
+    def test_legacy_migration_to_default_only(self):
+        self.engine.set_default_profile("alpha")
+        legacy = self.tmp / ".ely" / "sessions.json"
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        legacy.write_text(json.dumps([{"id": "old", "messages": []}]), encoding="utf-8")
+        self.assertEqual([s["id"] for s in self.engine.sessions("alpha")], ["old"])
+        self.assertEqual(self.engine.sessions("beta"), [])  # beta no adopta lo legado
+
+    def test_nav_includes_storage(self):
+        from ely_cli import routes
+        self.assertIn("storage", [item["id"] for item in routes.flat()])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

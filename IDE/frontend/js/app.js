@@ -17,6 +17,7 @@
     ]},
     { group: "Operaciones", items: [
       { id: "assets", label: "Asset Browser", desc: "Archivos y activos del workflow" },
+      { id: "storage", label: "Local Storage", desc: "Archivos por perfil: generado y planeado" },
       { id: "repos", label: "Repositories", desc: "Importa repositorios Git al workspace" },
       { id: "skillslib", label: "Skills Library", desc: "Capacidades operativas" },
       { id: "skills", label: "Skills", desc: "Edita y revisa skills" },
@@ -39,6 +40,7 @@
     canvas: ["Canvas", "Diseña y orquesta visualmente"],
     teams: ["Agent Teams", "Coordina equipos y roles"],
     assets: ["Asset Browser", "Archivos y activos del workflow"],
+    storage: ["Local Storage", "Archivos por perfil: generado y planeado"],
     repos: ["Repositories", "Importa repositorios Git al workspace"],
     skillslib: ["Skills Library", "Capacidades operativas"],
     skills: ["Skills", "Edita y revisa skills"],
@@ -298,7 +300,8 @@
          modificar el documento original. */
       const LAZY = {
         skillslib: "js/views/skillslib.js",
-        repos: "js/views/repos.js"
+        repos: "js/views/repos.js",
+        storage: "js/views/storage.js"
       };
 
       const factory = (window.Views || {})[this.route];
