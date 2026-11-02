@@ -1,0 +1,10 @@
+{
+  "id": "groq",
+  "label": "Groq",
+  "provider": "openai",
+  "base_url": "https://api.groq.com/openai/v1",
+  "model": "llama-3.3-70b-versatile",
+  "key_var": "GROQ_API_KEY",
+  "color": "#f87171",
+  "notes": "Inferencia de baja latencia (LPU)."
+}

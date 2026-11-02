@@ -1,0 +1,34 @@
+{
+  "name": "@kimtaeyoon83/mcp-server-youtube-transcript",
+  "version": "0.1.1",
+  "description": "This is an MCP server that allows you to directly download transcripts of YouTube videos.",
+  "license": "MIT",
+  "author": "Freddie",
+  "homepage": "https://github.com/kimtaeyoon83/mcp-server-youtube-transcript",
+  "bugs": "https://github.com/kimtaeyoon83/mcp-server-youtube-transcript/issues",
+  "access": "public",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "bin": {
+    "mcp-server-youtube-transcript": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc && shx chmod +x dist/*.js",
+    "prepare": "npm run build",
+    "watch": "tsc --watch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.9.0",
+    "mcp-evals": "^1.0.18",
+    "twelvelabs-js": "^1.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.24",
+    "shx": "^0.3.4",
+    "typescript": "^5.6.2"
+  }
+}

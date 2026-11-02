@@ -1,0 +1,9 @@
+{
+  "id": "mistral",
+  "label": "Mistral AI",
+  "provider": "openai",
+  "base_url": "https://api.mistral.ai/v1",
+  "model": "mistral-small-latest",
+  "key_var": "MISTRAL_API_KEY",
+  "color": "#fbbf24"
+}

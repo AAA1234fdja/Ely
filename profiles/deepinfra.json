@@ -1,0 +1,9 @@
+{
+  "id": "deepinfra",
+  "label": "DeepInfra",
+  "provider": "openai",
+  "base_url": "https://api.deepinfra.com/v1/openai",
+  "model": "meta-llama/Meta-Llama-3.1-70B-Instruct",
+  "key_var": "DEEPINFRA_API_KEY",
+  "color": "#34d399"
+}
