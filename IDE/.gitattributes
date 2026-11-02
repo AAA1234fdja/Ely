@@ -1,0 +1,33 @@
+* text=auto
+LICENSE.txt eol=crlf
+ThirdPartyNotices.txt eol=crlf
+*.bat eol=crlf
+*.cmd eol=crlf
+*.ps1 eol=lf
+*.sh eol=lf
+*.rtf -text
+**/*.json linguist-language=jsonc
+*.xpm filter=lfs diff=lfs merge=lfs -text
+*.perf-data.txt filter=lfs diff=lfs merge=lfs -text
+*.dll filter=lfs diff=lfs merge=lfs -text
+*.wasm filter=lfs diff=lfs merge=lfs -text
+*.gz filter=lfs diff=lfs merge=lfs -text
+*.tiktoken filter=lfs diff=lfs merge=lfs -text
+*.dylib filter=lfs diff=lfs merge=lfs -text
+*.zip filter=lfs diff=lfs merge=lfs -text
+*.tiff filter=lfs diff=lfs merge=lfs -text
+*.nupkg filter=lfs diff=lfs merge=lfs -text
+*.recording.w.json filter=lfs diff=lfs merge=lfs -text
+*.so filter=lfs diff=lfs merge=lfs -text
+*.tar* filter=lfs diff=lfs merge=lfs -text
+*.png filter=lfs diff=lfs merge=lfs -text
+*.icns filter=lfs diff=lfs merge=lfs -text
+*.perf-data.ts filter=lfs diff=lfs merge=lfs -text
+*.exe filter=lfs diff=lfs merge=lfs -text
+*.7z filter=lfs diff=lfs merge=lfs -text
+*.ico filter=lfs diff=lfs merge=lfs -text
+*.bmp filter=lfs diff=lfs merge=lfs -text
+out/** filter=lfs diff=lfs merge=lfs -text
+.build/** filter=lfs diff=lfs merge=lfs -text
+build/** filter=lfs diff=lfs merge=lfs -text
+extensions/**/node_modules/** filter=lfs diff=lfs merge=lfs -text
