@@ -171,13 +171,9 @@ nav a .badge-dot {
 body.collapsed nav a { justify-content: center; }
 body.collapsed nav a .badge-dot { display: none; }
 
-.agent {
-  border: 1px solid var(--border);
-  background: var(--bg-soft);
-  border-radius: var(--radius);
-  padding: 11px;
-  margin-top: 8px;
-}
+/* La tarjeta Photon del HTML base ya no se muestra en la barra lateral:
+   el chat se abre desde el botón flotante verde (#chat-fab). */
+.agent { display: none; }
 .agent b { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; }
 .agent p { color: var(--muted); font-size: 10.5px; margin: 6px 0 10px; line-height: 1.45; }
 .agent .btn { width: 100%; }
@@ -625,8 +621,30 @@ label.field .hint { color: var(--muted); font-size: 10px; font-weight: 400; }
 @keyframes fade { from { opacity: 0; } }
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
 
+/* ------------------------------------------------- botón flotante de chat */
+/* Recuadro verde redondeado, abajo a la derecha: abre el chat (CLI). */
+#chat-fab {
+  position: fixed; right: 16px; bottom: 16px; z-index: 95;
+  display: flex; align-items: center; gap: 8px;
+  background: var(--green); color: var(--bg);
+  border: none; border-radius: 14px;
+  padding: 11px 16px;
+  font-family: inherit; font-size: 12.5px; font-weight: 700;
+  cursor: pointer; box-shadow: var(--shadow);
+  transition: filter 0.15s ease, transform 0.15s ease;
+}
+#chat-fab:hover { filter: brightness(1.1); transform: translateY(-1px); }
+#chat-fab:active { transform: translateY(0); }
+#chat-fab .fab-icon {
+  display: grid; place-items: center;
+  width: 20px; height: 20px; border-radius: 7px;
+  background: var(--bg); color: var(--green);
+  font-size: 12px; font-weight: 700;
+}
+
 /* ---------------------------------------------------------------- toasts */
-#toasts { position: fixed; right: 14px; bottom: 14px; z-index: 90; display: flex; flex-direction: column; gap: 7px; max-width: 340px; }
+/* Subidos para no tapar el botón flotante de chat. */
+#toasts { position: fixed; right: 14px; bottom: 74px; z-index: 90; display: flex; flex-direction: column; gap: 7px; max-width: 340px; }
 .toast {
   border: 1px solid var(--border-strong);
   border-left: 2px solid var(--accent);

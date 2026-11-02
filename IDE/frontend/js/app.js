@@ -286,6 +286,8 @@
     render() {
       this.renderNav();
       this.renderHeader();
+      /* El botón flotante sobra cuando ya estás en el chat. */
+      if (this.chatFab) this.chatFab.style.display = this.route === "chat" ? "none" : "flex";
       const view = UI.$("#view");
       if (!view || !this.connected) return;
       UI.clear(view);
@@ -355,8 +357,18 @@
         const collapse = side.querySelector(".collapse");
         if (collapse) collapse.addEventListener("click", () => document.body.classList.toggle("collapsed"));
       }
-      const chatBtn = document.querySelector(".agent .btn");
-      if (chatBtn) chatBtn.addEventListener("click", () => this.navigate("chat"));
+      /* El chat ya no se abre desde la tarjeta Photon de la barra lateral
+         (oculta por CSS): botón flotante verde abajo a la derecha. Se crea
+         en tiempo de ejecución, como #toasts, sin tocar el HTML base. */
+      const fab = UI.el("button", {
+        id: "chat-fab", title: "Abrir chat (CLI)", "aria-label": "Abrir chat",
+        onclick: () => this.navigate("chat")
+      }, [
+        UI.el("span", { class: "fab-icon", text: "❯" }),
+        UI.el("span", { text: "Chat" })
+      ]);
+      document.body.appendChild(fab);
+      this.chatFab = fab;
 
       this.route = (location.hash || "#/dashboard").replace("#/", "");
       window.addEventListener("hashchange", () => {
