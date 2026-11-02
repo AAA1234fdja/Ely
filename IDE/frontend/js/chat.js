@@ -1,4 +1,12 @@
-/* Vista de chat: streaming SSE real contra /api/chat/stream */
+/* Vista de chat · diseño tipo Codex (sidebar + hero + composer inferior).
+ *
+ * - El asistente se muestra como «Ely» (nunca el nombre del modelo/agente).
+ * - Cada respuesta muestra al final: tiempo de razonamiento, tiempo total y
+ *   la fecha/hora de fin (mes/día/año hora:minuto, según la nacionalidad).
+ * - Botón verde «−» arriba a la derecha para minimizar al widget flotante.
+ * - Acceso a Local Storage para abrir archivos de distintos formatos.
+ * Streaming SSE real contra /api/chat/stream.
+ */
 (function () {
   "use strict";
 
@@ -8,8 +16,8 @@
     sessions: [],
     busy: false,
     lastUsage: null,
-    title: "Nueva conversación",
-    profile: null
+    profile: null,
+    showAllRecents: false
   };
 
   function newId() {
@@ -39,48 +47,46 @@
     } catch (e) { /* la sesión local sigue viva aunque falle el guardado */ }
   }
 
-  function messageNode(msg, agent) {
+  /* ---------------------------------------------------------- mensaje */
+  function messageNode(msg) {
     const isUser = msg.role === "user";
     const body = UI.el("div", { class: "body" }, [
       UI.el("div", { class: "who" }, [
-        UI.el("span", { text: isUser ? "Tú" : (msg.agentName || (agent ? agent.name : "Asistente")) }),
-        msg.meta && msg.meta.model ? UI.el("span", { class: "muted mono", text: msg.meta.model }) : null
+        UI.el("span", { text: isUser ? t("chat.you") : t("chat.ely") })
       ]),
       UI.el("div", { class: "bubble" })
     ]);
     const bubble = body.querySelector(".bubble");
+    bubble.innerHTML = UI.md(msg.content || "");
     if (msg.error) {
-      bubble.innerHTML = UI.md(msg.content);
       bubble.appendChild(UI.el("div", {
-        class: "mono",
-        style: { marginTop: "8px", color: "var(--red)", fontSize: "11px" },
+        class: "mono", style: { marginTop: "8px", color: "var(--red)", fontSize: "11px" },
         text: msg.error
       }));
     } else {
-      bubble.innerHTML = UI.md(msg.content);
       UI.bindCopy(bubble);
     }
-    if (msg.meta && (msg.meta.tokens || msg.meta.latency_ms) && (!window.Settings || Settings.get("showUsage"))) {
-      const meta = UI.el("div", { class: "meta" }, [
-        msg.meta.tokens ? UI.el("span", { text: UI.num(msg.meta.tokens) + " tokens" }) : null,
-        msg.meta.latency_ms ? UI.el("span", { text: UI.ms(msg.meta.latency_ms) }) : null,
-        msg.meta.profile ? UI.el("span", { class: "mono", text: msg.meta.profile }) : null,
-        msg.meta.testKey ? UI.el("span", { class: "badge warn", text: "clave de prueba" }) : null
+
+    /* Pie con tiempos y fecha de fin (solo respuestas del asistente). */
+    if (!isUser && msg.meta && (msg.meta.total_ms != null || msg.meta.completed_at)) {
+      const meta = UI.el("div", { class: "chat-meta" }, [
+        msg.meta.reasoning_ms != null ? UI.el("span", { title: t("chat.reasoning"), text: "🧠 " + t("chat.reasoning") + ": " + I18N.fmtDuration(msg.meta.reasoning_ms) }) : null,
+        msg.meta.total_ms != null ? UI.el("span", { title: t("chat.total"), text: "⏱ " + t("chat.total") + ": " + I18N.fmtDuration(msg.meta.total_ms) }) : null,
+        msg.meta.completed_at ? UI.el("span", { title: t("chat.completed"), text: "📅 " + I18N.fmtDateTime(msg.meta.completed_at) }) : null
       ]);
       body.appendChild(meta);
     }
-    const avatar = UI.el("div", { class: "avatar", text: isUser ? "TÚ" : (msg.icon || (agent ? agent.icon : "◈")) });
-    if (!isUser && msg.agentColor) avatar.style.color = msg.agentColor;
+
+    const avatar = UI.el("div", { class: "avatar", text: isUser ? "TÚ" : "◈" });
+    if (!isUser) avatar.classList.add("ely");
     return UI.el("div", { class: "msg " + (isUser ? "user" : "") + (msg.error ? " error" : "") }, [avatar, body]);
   }
 
   window.Views = window.Views || {};
   window.Views.chat = function (view, App) {
-    const agent = App.agent();
     const profile = App.profile();
 
-    /* Cada perfil tiene su propia conversación: al cambiar de perfil se
-       empieza de cero y se cargan las sesiones guardadas de ese perfil. */
+    /* Cada perfil tiene su propia conversación. */
     const currentProfile = App.profileId();
     if (state.profile !== currentProfile) {
       state.profile = currentProfile;
@@ -90,244 +96,221 @@
       state.lastUsage = null;
     }
 
-    /* Conversación que llega desde el widget flotante al pulsar "expandir". */
+    /* Conversación que llega desde el widget al expandir. */
     if (window.__elyWidgetHandoff) {
       state.messages = window.__elyWidgetHandoff.messages || [];
       state.sessionId = window.__elyWidgetHandoff.sessionId || newId();
       window.__elyWidgetHandoff = null;
     }
-
     if (!state.sessionId) state.sessionId = newId();
 
     /* ------------------------------------------------------------ estructura */
-    const wrap = UI.el("div", { class: "chat-wrap", style: { height: "100%" } });
-    const col = UI.el("div", { class: "chat-col" });
-    const side = UI.el("div", { class: "card chat-side", style: { display: "flex", flexDirection: "column", gap: "14px", overflow: "hidden" } });
+    const shell = UI.el("div", { class: "chat-shell" });
+    const sidebar = UI.el("div", { class: "chat-sidebar" });
+    const main = UI.el("div", { class: "chat-main" });
+    shell.appendChild(sidebar);
+    shell.appendChild(main);
 
-    /* cabecera del chat */
-    const agentSelect = UI.el("select", {
-      style: { width: "auto", minWidth: "150px" },
-      onchange: (event) => {
-        Store.set({ agent: event.target.value });
-        App.render();
-      }
-    }, App.agents.map((a) => UI.el("option", {
-      value: a.id, selected: a.id === App.agentId(), text: a.icon + "  " + a.name + " · " + a.role
-    })));
+    /* ---------------------------------------------------------- sidebar */
+    sidebar.appendChild(UI.el("div", { class: "cs-brand" }, [
+      UI.el("span", { class: "cs-logo", text: "◈" }),
+      UI.el("span", { class: "cs-name", text: "Ely" }),
+      UI.el("span", { class: "muted", text: "⌄" }),
+      UI.el("div", { style: { flex: "1" } }),
+      UI.el("button", { class: "icon-btn", html: "⌕", title: t("chat.recents") }),
+      UI.el("button", { class: "icon-btn", html: "◧", title: "Local Storage", onclick: () => App.navigate("storage") })
+    ]));
 
-    const memoryToggle = UI.el("input", {
-      type: "checkbox", checked: Store.get("memory"),
-      onchange: (event) => Store.set({ memory: event.target.checked })
-    });
-
-    const head = UI.el("div", { class: "chat-head" }, [
-      agentSelect,
-      UI.el("label", { class: "check", title: "Inyecta las notas de Memoria como contexto" }, [
-        UI.el("span", { class: "switch" }, [memoryToggle, UI.el("span")]),
-        UI.el("span", { text: "memoria" })
-      ]),
-      UI.el("span", { class: "spacer", style: { flex: "1" } }),
-      UI.btn("Nueva", () => {
-        if (state.busy) return;
-        state.messages = [];
-        state.sessionId = newId();
-        state.lastUsage = null;
-        renderLog();
-        renderSessions();
-      }, { small: true, ghost: true, icon: "＋" }),
-      UI.btn("Guardar", async () => { await persist(); UI.toast("ok", "Sesión guardada"); renderSessions(); }, { small: true })
+    const newBtn = UI.el("button", { class: "cs-new" }, [
+      UI.el("span", { text: "✎" }), UI.el("span", { text: t("chat.new") })
     ]);
+    newBtn.addEventListener("click", () => {
+      if (state.busy) return;
+      state.messages = [];
+      state.sessionId = newId();
+      state.lastUsage = null;
+      renderContent();
+      renderRecents();
+    });
+    sidebar.appendChild(newBtn);
 
-    /* log */
-    const log = UI.el("div", { class: "chat-log", id: "chat-log" });
-    const composer = UI.el("div", { class: "composer" });
-    col.appendChild(head);
-    col.appendChild(log);
-    col.appendChild(composer);
+    const recentsHead = UI.el("div", { class: "cs-head", text: t("chat.recents") });
+    const recentsList = UI.el("div", { class: "cs-list" });
+    const showMore = UI.el("button", { class: "cs-more", text: t("chat.showMore") });
+    showMore.addEventListener("click", () => {
+      state.showAllRecents = !state.showAllRecents;
+      showMore.textContent = state.showAllRecents ? t("chat.showLess") : t("chat.showMore");
+      renderRecents();
+    });
+    sidebar.appendChild(recentsHead);
+    sidebar.appendChild(recentsList);
+    sidebar.appendChild(showMore);
 
-    /* ------------------------------------------------------------ render */
-    function renderLog() {
-      UI.clear(log);
-      if (!state.messages.length) {
-        log.appendChild(UI.el("div", { class: "empty", style: { margin: "auto" } }, [
-          UI.el("div", {
-            class: "big",
-            style: { fontSize: "34px", color: agent ? agent.color : "var(--accent)" },
-            text: agent ? agent.icon : "◈"
-          }),
-          UI.el("div", { style: { fontSize: "15px", color: "var(--text)" }, text: agent ? agent.name : "Ely" }),
-          UI.el("div", { text: agent ? agent.role : "" }),
-          UI.el("div", {
-            class: "dim",
-            style: { marginTop: "8px", maxWidth: "420px" },
-            text: agent && agent.starter ? agent.starter : "Escribe abajo para empezar."
-          }),
-          profile ? UI.el("div", {
-            class: "mono",
-            style: { marginTop: "14px", fontSize: "11px", color: "var(--muted)" },
-            text: profile.endpoint + "  ·  " + (profile.masked_key || "sin clave")
-          }) : null
-        ]));
+    sidebar.appendChild(UI.el("div", { class: "cs-head", text: t("chat.projects") }));
+    const projectsList = UI.el("div", { class: "cs-list" });
+    sidebar.appendChild(projectsList);
+
+    function renderRecents() {
+      UI.clear(recentsList);
+      if (!state.sessions.length) {
+        recentsList.appendChild(UI.el("div", { class: "cs-empty", text: t("chat.noRecents") }));
+        showMore.style.display = "none";
         return;
       }
-      state.messages.forEach((msg) => log.appendChild(messageNode(msg, agent)));
-      log.scrollTop = log.scrollHeight;
-    }
-
-    function renderSessions() {
-      UI.clear(side);
-      side.appendChild(UI.el("h3", null, [
-        UI.el("span", { text: "Conversaciones" }),
-        UI.el("span", { class: "hint", text: state.sessions.length + " guardadas" })
-      ]));
-      const list = UI.el("div", { class: "side-list", style: { overflowY: "auto", maxHeight: "46%" } });
-      if (!state.sessions.length) {
-        list.appendChild(UI.el("div", { class: "muted", style: { fontSize: "12px" }, text: "Aún no hay sesiones guardadas." }));
-      }
-      state.sessions.forEach((session) => {
-        const item = UI.el("div", { class: "side-item" + (session.id === state.sessionId ? " on" : "") }, [
-          UI.el("span", { class: "trunc", text: session.title || "Sin título" }),
-          UI.el("small", { text: UI.date(session.updated_at) + " · " + (session.messages || []).length + " msj" })
+      const shown = state.showAllRecents ? state.sessions : state.sessions.slice(0, 7);
+      showMore.style.display = state.sessions.length > 7 ? "" : "none";
+      shown.forEach((session) => {
+        const active = session.id === state.sessionId;
+        const item = UI.el("div", { class: "cs-item" + (active ? " on" : ""), title: session.title }, [
+          UI.el("span", { class: "trunc", text: session.title || t("chat.untitled") }),
+          UI.el("span", { class: "cs-tag", text: (session.messages || []).length + " " + t("chat.msgs") }),
+          active ? UI.el("span", { class: "cs-dot" }) : null
         ]);
         item.addEventListener("click", () => {
           if (state.busy) return;
           state.sessionId = session.id;
-          state.messages = (session.messages || []).map((m) => ({
-            role: m.role, content: m.content, meta: m.meta, error: m.error,
-            agentName: m.meta && m.meta.agentName, icon: m.meta && m.meta.icon, agentColor: m.meta && m.meta.color
-          }));
-          renderLog();
-          renderSessions();
+          state.messages = (session.messages || []).map((m) => ({ role: m.role, content: m.content, meta: m.meta, error: m.error }));
+          renderContent();
+          renderRecents();
         });
-        const del = UI.el("button", {
-          class: "btn ghost sm", html: "×", title: "Eliminar",
-          style: { marginLeft: "auto", padding: "0 6px" },
-          onclick: async (event) => {
-            event.stopPropagation();
-            await API.deleteSession(session.id, state.profile).catch(() => {});
-            state.sessions = state.sessions.filter((s) => s.id !== session.id);
-            if (session.id === state.sessionId) {
-              state.messages = [];
-              state.sessionId = newId();
-              renderLog();
-            }
-            renderSessions();
-          }
-        });
-        item.appendChild(del);
-        list.appendChild(item);
+        recentsList.appendChild(item);
       });
-      side.appendChild(list);
-
-      side.appendChild(UI.el("div", { class: "divider" }));
-      side.appendChild(UI.el("h3", { text: "Atajos" }));
-      side.appendChild(UI.el("div", { class: "chips" }, (App.agents || []).slice(0, 8).map((a) =>
-        UI.el("button", {
-          class: "chip" + (a.id === App.agentId() ? " on" : ""),
-          text: a.icon + " " + a.name,
-          onclick: () => { Store.set({ agent: a.id }); App.render(); }
-        })
-      )));
-
-      side.appendChild(UI.el("div", { class: "divider" }));
-      const info = UI.el("div", { class: "kv", style: { fontSize: "11.5px" } }, [
-        UI.el("dt", { text: "perfil" }), UI.el("dd", { text: profile ? profile.label : "—" }),
-        UI.el("dt", { text: "modelo" }), UI.el("dd", { class: "mono", text: profile ? profile.model : "—" }),
-        UI.el("dt", { text: "clave" }), UI.el("dd", { class: "mono", text: profile ? (profile.masked_key || "sin clave") : "—" }),
-        UI.el("dt", { text: "origen" }), UI.el("dd", { class: "mono", text: profile ? (profile.key_origin || "—") : "—" }),
-        UI.el("dt", { text: "último uso" }), UI.el("dd", {
-          text: state.lastUsage ? state.lastUsage.total_tokens + " tokens · " + UI.ms(state.lastUsage.latency_ms) : "—"
-        })
-      ]);
-      side.appendChild(info);
-      side.appendChild(UI.el("div", { class: "divider" }));
-      side.appendChild(UI.el("p", {
-        class: "muted",
-        style: { fontSize: "11px", margin: 0, lineHeight: "1.5" },
-        text: "La clave nunca sale del servidor local: el navegador llama a /api y Python firma la petición al proveedor."
-      }));
     }
 
-    /* ------------------------------------------------------------ envío */
-    let textarea;
-    function buildComposer() {
-      UI.clear(composer);
-      textarea = UI.el("textarea", {
-        placeholder: "Escribe tu mensaje…  (Enter envía · Shift+Enter salto de línea)",
-        rows: 1
+    function renderProjects() {
+      UI.clear(projectsList);
+      const profiles = App.profiles || [];
+      if (!profiles.length) {
+        projectsList.appendChild(UI.el("div", { class: "cs-empty", text: t("chat.noProjects") }));
+        return;
+      }
+      profiles.forEach((p) => {
+        const item = UI.el("div", { class: "cs-item proj" + (p.id === state.profile ? " on" : "") }, [
+          UI.el("span", { class: "cs-folder", text: "🗀" }),
+          UI.el("span", { class: "trunc", text: p.label }),
+          UI.el("button", {
+            class: "icon-btn cs-open", html: "↗", title: t("chat.openStorage"),
+            onclick: (e) => { e.stopPropagation(); App.setProfile(p.id); App.navigate("storage"); }
+          })
+        ]);
+        item.addEventListener("click", () => { if (!state.busy) App.setProfile(p.id); });
+        projectsList.appendChild(item);
       });
-      textarea.addEventListener("keydown", (event) => {
-        const enterSends = !window.Settings || Settings.get("sendOnEnter");
-        if (event.key === "Enter" && !event.shiftKey && enterSends) {
-          event.preventDefault();
-          send();
+    }
+
+    /* ---------------------------------------------------------- main */
+    const topbar = UI.el("div", { class: "chat-topbar" }, [
+      UI.el("span", { class: "muted", style: { fontSize: "12px" }, text: t("chat.ely") }),
+      UI.el("div", { style: { flex: "1" } }),
+      UI.el("button", {
+        class: "chat-minimize", html: "−", title: t("chat.minimize"),
+        onclick: () => {
+          if (window.ChatWidget) ChatWidget.adopt(state.messages, state.sessionId, state.profile);
+          App.navigate(App.routeBeforeChat || "dashboard");
         }
-      });
-      textarea.addEventListener("input", () => {
-        textarea.style.height = "auto";
-        textarea.style.height = Math.min(190, textarea.scrollHeight) + "px";
-      });
+      })
+    ]);
+    main.appendChild(topbar);
 
-      const sendBtn = UI.btn("Enviar", send, { primary: true, icon: "➤" });
-      const stopBtn = UI.btn("Detener", () => { state.abort = true; }, { small: true, danger: true, ghost: true });
-      stopBtn.hidden = true;
+    const content = UI.el("div", { class: "chat-content" });
+    main.appendChild(content);
 
-      composer.appendChild(UI.el("div", { class: "chips" }, [
-        ...(agent && agent.starter ? [UI.el("button", {
-          class: "chip", text: "▸ " + agent.starter,
-          onclick: () => { textarea.value = agent.starter; textarea.focus(); }
-        })] : []),
-        UI.el("button", {
-          class: "chip", text: "＋ resumen del proyecto",
-          onclick: () => {
-            textarea.value = "Resume el estado del repositorio Ely Cowork: carpetas, propósito de cada una y qué falta por implementar.";
-            textarea.focus();
-          }
-        })
-      ]));
-      composer.appendChild(textarea);
-      composer.appendChild(UI.el("div", { class: "row" }, [
-        UI.el("span", { class: "muted", style: { fontSize: "11px" }, text: App.agent() ? App.agent().name + " · " + (profile ? profile.model : "sin modelo") : "" }),
-        UI.el("div", { style: { flex: "1" } }),
-        stopBtn,
-        sendBtn
-      ]));
-      return { sendBtn, stopBtn };
+    /* composer */
+    const composer = UI.el("div", { class: "chat-composer" });
+    const ctxRow = UI.el("div", { class: "cc-context" });
+    const profileSelect = UI.el("select", {
+      class: "cc-select",
+      onchange: (e) => App.setProfile(e.target.value)
+    }, (App.profiles || []).map((p) => UI.el("option", { value: p.id, selected: p.id === currentProfile, text: p.label })));
+    ctxRow.appendChild(UI.el("span", { class: "cc-ctx" }, [UI.el("span", { text: "◈" }), profileSelect]));
+    ctxRow.appendChild(UI.el("button", {
+      class: "cc-ctx cc-folder-btn", title: t("chat.openStorage"),
+      onclick: () => FileViewer.browseStorage(state.profile)
+    }, [UI.el("span", { text: "🗀" }), UI.el("span", { text: t("chat.openStorage") }), UI.el("span", { class: "muted", text: "⌄" })]));
+    composer.appendChild(ctxRow);
+
+    const textarea = UI.el("textarea", { class: "cc-input", rows: 1, placeholder: t("chat.doAnything") });
+    composer.appendChild(textarea);
+
+    const bottomRow = UI.el("div", { class: "cc-bottom" });
+    const attachBtn = UI.el("button", { class: "cc-plus", html: "＋", title: t("chat.attach"), onclick: () => FileViewer.browseStorage(state.profile) });
+    const stopBtn = UI.el("button", { class: "cc-stop", text: t("chat.stop"), hidden: true, onclick: () => { state.abort = true; } });
+    const micBtn = UI.el("button", { class: "cc-mic", html: "🎤", title: "—", disabled: true });
+    const sendBtn = UI.el("button", { class: "cc-send", html: "↑", title: t("chat.send"), onclick: () => send() });
+    bottomRow.appendChild(attachBtn);
+    bottomRow.appendChild(UI.el("div", { style: { flex: "1" } }));
+    bottomRow.appendChild(stopBtn);
+    bottomRow.appendChild(micBtn);
+    bottomRow.appendChild(sendBtn);
+    composer.appendChild(bottomRow);
+    main.appendChild(composer);
+
+    textarea.addEventListener("keydown", (event) => {
+      const enterSends = !window.Settings || Settings.get("sendOnEnter");
+      if (event.key === "Enter" && !event.shiftKey && enterSends) { event.preventDefault(); send(); }
+    });
+    textarea.addEventListener("input", () => {
+      textarea.style.height = "auto";
+      textarea.style.height = Math.min(190, textarea.scrollHeight) + "px";
+    });
+
+    /* ---------------------------------------------------------- contenido */
+    function renderContent() {
+      UI.clear(content);
+      if (!state.messages.length) {
+        const hero = UI.el("div", { class: "chat-hero" }, [
+          UI.el("div", { class: "ch-logo", text: "◈" }),
+          UI.el("h2", { class: "ch-title", text: t("chat.whatBuild") })
+        ]);
+        const sugs = UI.el("div", { class: "ch-sugs" }, [
+          suggestion("✉", t("chat.sug1"), () => { textarea.value = t("chat.sug1"); textarea.focus(); }),
+          suggestion("🗀", t("chat.sug2"), () => FileViewer.browseStorage(state.profile)),
+          suggestion("⌘", t("chat.sug3"), () => { textarea.value = t("chat.sug3"); textarea.focus(); })
+        ]);
+        hero.appendChild(sugs);
+        content.appendChild(hero);
+        return;
+      }
+      const log = UI.el("div", { class: "chat-log", id: "chat-log" });
+      state.messages.forEach((m) => log.appendChild(messageNode(m)));
+      content.appendChild(log);
+      log.scrollTop = log.scrollHeight;
     }
 
-    let controls = buildComposer();
+    function suggestion(icon, text, onClick) {
+      const node = UI.el("button", { class: "ch-sug" }, [
+        UI.el("span", { class: "ch-sug-icon", text: icon }),
+        UI.el("span", { class: "trunc", text })
+      ]);
+      node.addEventListener("click", onClick);
+      return node;
+    }
 
+    function logEl() { return content.querySelector("#chat-log"); }
+
+    /* ---------------------------------------------------------- envío */
     async function send() {
       if (state.busy) return;
       const text = (textarea.value || "").trim();
       if (!text) return;
-      if (!profile) {
-        UI.toast("err", "Sin perfil", "Configura un perfil en Integraciones");
-        return;
-      }
+      if (!profile) { UI.toast("err", t("chat.noProfileTitle"), t("chat.noProfileBody")); return; }
+
       state.busy = true;
       state.abort = false;
-      controls.sendBtn.disabled = true;
-      controls.stopBtn.hidden = false;
+      sendBtn.disabled = true;
+      stopBtn.hidden = false;
       textarea.value = "";
       textarea.style.height = "auto";
 
-      const currentAgent = App.agent();
       const userMsg = { role: "user", content: text };
       state.messages.push(userMsg);
-      log.appendChild(messageNode(userMsg, currentAgent));
+      renderContent();              // muestra el log con el mensaje del usuario
+      const log = logEl();
       const history = conversationForApi().slice(0, -1);
 
-      /* placeholder del asistente */
-      const assistantMsg = {
-        role: "assistant",
-        content: "",
-        agentName: currentAgent ? currentAgent.name : "Asistente",
-        icon: currentAgent ? currentAgent.icon : "◈",
-        agentColor: currentAgent ? currentAgent.color : null,
-        meta: {}
-      };
-      const holder = messageNode(assistantMsg, currentAgent);
+      const t0 = performance.now();
+      const assistantMsg = { role: "assistant", content: "", meta: {} };
+      const holder = messageNode(assistantMsg);
       const bubble = holder.querySelector(".bubble");
       bubble.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
       log.appendChild(holder);
@@ -335,115 +318,78 @@
 
       let acc = "";
       let frame = null;
-      const paint = () => {
-        bubble.innerHTML = UI.md(acc);
-        UI.bindCopy(bubble);
-        log.scrollTop = log.scrollHeight;
-        frame = null;
+      const paint = () => { bubble.innerHTML = UI.md(acc); UI.bindCopy(bubble); log.scrollTop = log.scrollHeight; frame = null; };
+      const markFirst = () => { if (assistantMsg.meta.reasoning_ms == null) assistantMsg.meta.reasoning_ms = performance.now() - t0; };
+      const finish = () => {
+        assistantMsg.meta.total_ms = performance.now() - t0;
+        if (assistantMsg.meta.reasoning_ms == null) assistantMsg.meta.reasoning_ms = assistantMsg.meta.total_ms;
+        assistantMsg.meta.completed_at = new Date().toISOString();
       };
 
       const useStream = !window.Settings || Settings.get("stream");
       if (!useStream) {
         try {
-          const result = await LLM.complete(text, {
-            agent: currentAgent ? currentAgent.id : "photon",
-            profile: App.profileId(),
-            history
-          });
+          const result = await LLM.complete(text, { agent: App.agentId(), profile: App.profileId(), history });
           assistantMsg.content = result.text || "";
           acc = assistantMsg.content;
-          assistantMsg.meta = {
-            profile: result.profile, model: result.model,
-            tokens: result.usage ? result.usage.total_tokens : 0,
-            latency_ms: result.usage ? result.usage.latency_ms : 0,
-            id: result.id
-          };
+          assistantMsg.meta.tokens = result.usage ? result.usage.total_tokens : 0;
         } catch (err) {
           assistantMsg.error = LLM.explain(err);
-          UI.toast("err", "Error de la API", err.message);
+          UI.toast("err", t("chat.apiError"), err.message);
         }
-        const nodeNoStream = messageNode(assistantMsg, currentAgent);
-        log.replaceChild(nodeNoStream, holder);
-        log.scrollTop = log.scrollHeight;
+        finish();
+        log.replaceChild(messageNode(assistantMsg), holder);
         state.messages.push(assistantMsg);
-        state.busy = false;
-        controls.sendBtn.disabled = false;
-        controls.stopBtn.hidden = true;
-        if (acc) await persist();
-        renderSessions();
-        textarea.focus();
+        endSend();
         return;
       }
 
       try {
-        await LLM.stream(text, {
-          agent: currentAgent ? currentAgent.id : "photon",
-          profile: App.profileId(),
-          history
-        }, {
-          onStart: (event) => {
-            assistantMsg.meta = { profile: event.profile, model: event.model, testKey: event.test_key };
-          },
-          onDelta: (chunk) => {
-            if (state.abort) return;
-            acc += chunk;
-            if (!frame) frame = requestAnimationFrame(paint);
-          },
-          onUsage: (usage) => {
-            state.lastUsage = usage;
-            assistantMsg.meta.tokens = usage.total_tokens;
-            assistantMsg.meta.latency_ms = usage.latency_ms;
-          },
-          onDone: (event) => {
-            if (event.usage) {
-              state.lastUsage = event.usage;
-              assistantMsg.meta.tokens = event.usage.total_tokens;
-              assistantMsg.meta.latency_ms = event.usage.latency_ms;
-            }
-            assistantMsg.meta.id = event.id;
-          },
+        await LLM.stream(text, { agent: App.agentId(), profile: App.profileId(), history }, {
+          onStart: () => {},
+          onDelta: (chunk) => { if (state.abort) return; markFirst(); acc += chunk; if (!frame) frame = requestAnimationFrame(paint); },
+          onUsage: (usage) => { state.lastUsage = usage; assistantMsg.meta.tokens = usage.total_tokens; },
+          onDone: (event) => { if (event.usage) { state.lastUsage = event.usage; assistantMsg.meta.tokens = event.usage.total_tokens; } },
           onError: (err) => {
-            assistantMsg.content = acc || "No se recibió respuesta del modelo.";
+            markFirst();
+            assistantMsg.content = acc || t("chat.noResponse");
             assistantMsg.error = err.message + (err.detail ? "\n" + (typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail)) : "");
           }
         });
       } catch (err) {
         assistantMsg.content = acc || "";
         assistantMsg.error = err.message;
-        UI.toast("err", "Error de la API", err.message);
+        UI.toast("err", t("chat.apiError"), err.message);
       }
 
       if (frame) { cancelAnimationFrame(frame); frame = null; }
       assistantMsg.content = acc;
-      const finalNode = messageNode(assistantMsg, currentAgent);
-      log.replaceChild(finalNode, holder);
+      finish();
+      log.replaceChild(messageNode(assistantMsg), holder);
       log.scrollTop = log.scrollHeight;
       state.messages.push(assistantMsg);
-      state.busy = false;
-      controls.sendBtn.disabled = false;
-      controls.stopBtn.hidden = true;
-      if (acc) await persist();
-      renderSessions();
-      textarea.focus();
+      endSend();
+
+      async function endSend() {
+        state.busy = false;
+        sendBtn.disabled = false;
+        stopBtn.hidden = true;
+        if (acc) await persist();
+        renderRecents();
+        textarea.focus();
+      }
     }
 
-    /* ------------------------------------------------------------ init */
-    renderLog();
-    renderSessions();
-    document.addEventListener("keydown", function focusHandler(event) {
-      if (event.key === "/" && document.activeElement === document.body && App.route === "chat") {
-        event.preventDefault();
-        if (textarea) textarea.focus();
-      }
-    });
+    /* ---------------------------------------------------------- init */
+    renderContent();
+    renderRecents();
+    renderProjects();
     setTimeout(() => textarea && textarea.focus(), 40);
     API.sessions(state.profile).then((data) => {
       state.sessions = data.sessions || [];
-      renderSessions();
+      renderRecents();
     }).catch(() => {});
 
-    wrap.appendChild(col);
-    wrap.appendChild(side);
-    return wrap;
+    return shell;
   };
 })();

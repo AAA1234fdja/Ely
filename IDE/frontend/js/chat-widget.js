@@ -39,11 +39,18 @@
   function msgNode(m) {
     const isUser = m.role === "user";
     const node = UI.el("div", { class: "cw-msg " + (isUser ? "user" : "bot") + (m.error ? " error" : "") }, [
-      UI.el("div", { class: "cw-who", text: isUser ? "Tú" : (m.agentName || "Asistente") }),
+      UI.el("div", { class: "cw-who", text: isUser ? t("chat.you") : t("chat.ely") }),
       UI.el("div", { class: "cw-text" })
     ]);
     node.querySelector(".cw-text").innerHTML = UI.md(m.content || "");
     if (m.error) node.appendChild(UI.el("div", { class: "cw-err", text: m.error }));
+    if (!isUser && m.meta && (m.meta.total_ms != null || m.meta.completed_at)) {
+      node.appendChild(UI.el("div", { class: "cw-meta" }, [
+        m.meta.reasoning_ms != null ? UI.el("span", { text: "🧠 " + I18N.fmtDuration(m.meta.reasoning_ms) }) : null,
+        m.meta.total_ms != null ? UI.el("span", { text: "⏱ " + I18N.fmtDuration(m.meta.total_ms) }) : null,
+        m.meta.completed_at ? UI.el("span", { text: "📅 " + I18N.fmtDateTime(m.meta.completed_at) }) : null
+      ]));
+    }
     return node;
   }
 
@@ -52,9 +59,9 @@
     if (!state.messages.length) {
       const agent = App ? App.agent() : null;
       log.appendChild(UI.el("div", { class: "cw-empty" }, [
-        UI.el("div", { class: "cw-empty-icon", text: agent ? agent.icon : "◈" }),
-        UI.el("div", { text: agent ? agent.name : "Ely" }),
-        UI.el("div", { class: "cw-empty-sub", text: "Escribe abajo para empezar." })
+        UI.el("div", { class: "cw-empty-icon", text: "◈" }),
+        UI.el("div", { text: t("chat.ely") }),
+        UI.el("div", { class: "cw-empty-sub", text: t("cw.emptySub") })
       ]));
       return;
     }
@@ -65,8 +72,8 @@
   function renderTitle() {
     const agent = App ? App.agent() : null;
     UI.clear(titleEl);
-    titleEl.appendChild(UI.el("span", { class: "cw-title-icon", text: agent ? agent.icon : "◈" }));
-    titleEl.appendChild(UI.el("span", { class: "trunc", text: agent ? agent.name : "Chat" }));
+    titleEl.appendChild(UI.el("span", { class: "cw-title-icon", text: "◈" }));
+    titleEl.appendChild(UI.el("span", { class: "trunc", text: t("chat.ely") }));
   }
 
   /* ------------------------------------------------------- abrir / cerrar */
@@ -100,7 +107,7 @@
   function togglePin() {
     state.pinned = !state.pinned;
     pinBtn.classList.toggle("on", state.pinned);
-    pinBtn.title = state.pinned ? "Soltar (se cerrará al navegar)" : "Fijar (mantener abierto)";
+    pinBtn.title = state.pinned ? t("cw.unpin") : t("cw.pin");
     panel.classList.toggle("pinned", state.pinned);
   }
 
@@ -122,7 +129,7 @@
     if (!text) return;
     const profile = App ? App.profile() : null;
     if (!profile) {
-      UI.toast("err", "Sin perfil", "Configura un perfil en Integraciones");
+      UI.toast("err", t("chat.noProfileTitle"), t("chat.noProfileBody"));
       return;
     }
     /* Si el perfil cambió con el panel abierto (fijado), no arrastrar la
@@ -144,13 +151,9 @@
     textarea.value = "";
     textarea.style.height = "auto";
 
+    const t0 = performance.now();
     state.messages.push({ role: "user", content: text });
-    const assistantMsg = {
-      role: "assistant", content: "", meta: {},
-      agentName: agent ? agent.name : "Asistente",
-      icon: agent ? agent.icon : "◈",
-      agentColor: agent ? agent.color : null
-    };
+    const assistantMsg = { role: "assistant", content: "", meta: {} };
     state.messages.push(assistantMsg);
     renderLog();
 
@@ -170,8 +173,11 @@
         profile: App.profileId(),
         history
       }, {
-        onStart: (e) => { assistantMsg.meta = { profile: e.profile, model: e.model }; },
-        onDelta: (chunk) => { acc += chunk; if (!frame) frame = requestAnimationFrame(paint); },
+        onStart: () => {},
+        onDelta: (chunk) => {
+          if (assistantMsg.meta.reasoning_ms == null) assistantMsg.meta.reasoning_ms = performance.now() - t0;
+          acc += chunk; if (!frame) frame = requestAnimationFrame(paint);
+        },
         onUsage: (u) => { assistantMsg.meta.tokens = u.total_tokens; },
         onDone: () => {},
         onError: (err) => { assistantMsg.error = err.message; }
@@ -182,7 +188,10 @@
 
     if (frame) { cancelAnimationFrame(frame); frame = null; }
     assistantMsg.content = acc;
-    if (!acc && !assistantMsg.error) assistantMsg.error = "No se recibió respuesta del modelo.";
+    assistantMsg.meta.total_ms = performance.now() - t0;
+    if (assistantMsg.meta.reasoning_ms == null) assistantMsg.meta.reasoning_ms = assistantMsg.meta.total_ms;
+    assistantMsg.meta.completed_at = new Date().toISOString();
+    if (!acc && !assistantMsg.error) assistantMsg.error = t("chat.noResponse");
     state.busy = false;
     sendBtn.disabled = false;
     renderLog();
@@ -197,9 +206,9 @@
     panel = UI.el("div", { id: "chat-widget", role: "dialog", "aria-label": "Chat" });
 
     titleEl = UI.el("div", { class: "cw-title" });
-    pinBtn = UI.el("button", { class: "cw-act", html: "📌", title: "Fijar (mantener abierto)", onclick: togglePin });
-    const expandBtn = UI.el("button", { class: "cw-act", html: "⤢", title: "Expandir al chat completo", onclick: expand });
-    const minBtn = UI.el("button", { class: "cw-act", html: "—", title: "Minimizar", onclick: close });
+    pinBtn = UI.el("button", { class: "cw-act", html: "📌", title: t("cw.pin"), onclick: togglePin });
+    const expandBtn = UI.el("button", { class: "cw-act", html: "⤢", title: t("cw.expand"), onclick: expand });
+    const minBtn = UI.el("button", { class: "cw-act", html: "—", title: t("cw.minimize"), onclick: close });
     const head = UI.el("div", { class: "cw-head" }, [
       titleEl,
       UI.el("div", { class: "cw-actions" }, [pinBtn, expandBtn, minBtn])
@@ -208,7 +217,7 @@
     log = UI.el("div", { class: "cw-log" });
 
     textarea = UI.el("textarea", {
-      rows: 1, placeholder: "Escribe tu mensaje…",
+      rows: 1, placeholder: t("cw.placeholder"),
       onkeydown: (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }
     });
     textarea.addEventListener("input", () => {
@@ -242,5 +251,13 @@
     if (state.open && !state.pinned) close();
   }
 
-  window.ChatWidget = { init, toggle, open, close, expand, onRoute };
+  /* Recibe la conversación del chat completo al pulsar «minimizar». */
+  function adopt(messages, sessionId, profile) {
+    state.messages = (messages || []).map((m) => ({ role: m.role, content: m.content, meta: m.meta, error: m.error }));
+    state.sessionId = sessionId || newSessionId();
+    state.profile = profile != null ? profile : (App ? App.profileId() : null);
+    open();
+  }
+
+  window.ChatWidget = { init, toggle, open, close, expand, onRoute, adopt };
 })();

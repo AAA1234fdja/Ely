@@ -2,6 +2,9 @@
 (function () {
   "use strict";
 
+  /* Fallback seguro por si i18n.js aún no cargó (se sobrescribe al cargar). */
+  if (!window.t) window.t = (key) => key;
+
   /* Respaldo estático: el servidor publica la tabla real en /api/routes.
      Estructura de navegación tomada de las capturas de referencia. */
   let NAV = [
@@ -98,6 +101,7 @@
     },
 
     navigate(route) {
+      if (route === "chat" && this.route !== "chat") this.routeBeforeChat = this.route;
       if (location.hash !== "#/" + route) location.hash = "#/" + route;
       else this.render();
     },
@@ -165,18 +169,20 @@
       UI.clear(header);
       const entry = TITLES[this.route] || ["Ely Cowork", ""];
       const profile = this.profile();
+      const subtitle = window.I18N && t("navdesc." + this.route) !== "navdesc." + this.route ? t("navdesc." + this.route) : entry[1];
 
       header.appendChild(UI.el("button", {
-        class: "icon-btn", id: "nav-toggle", html: "☰", title: "Menú",
+        class: "icon-btn", id: "nav-toggle", html: "☰", title: t("header.menu"),
         onclick: () => document.body.classList.toggle("nav-open")
       }));
 
       header.appendChild(UI.el("div", { class: "page" }, [
         UI.el("div", {
           class: "crumbs",
-          text: "ELY COWORK V" + (this.health ? this.health.version : "0.9.0") + " · PHOTON LABS"
+          text: "ELY COWORK V" + (this.health ? this.health.version : "0.9.0")
         }),
-        UI.el("h1", { text: entry[0] })
+        UI.el("h1", { text: entry[0] }),
+        subtitle ? UI.el("div", { class: "crumbs", style: { opacity: 0.7 }, text: subtitle }) : null
       ]));
 
       header.appendChild(UI.el("div", { class: "spacer" }));
@@ -184,7 +190,7 @@
       const pills = UI.el("div", { class: "row", style: { gap: "6px", flexWrap: "nowrap" } });
 
       /* workflow activo */
-      const flowPill = UI.el("div", { class: "status-pill click", title: "Workflow activo en esta sesión" }, [
+      const flowPill = UI.el("div", { class: "status-pill click", title: t("header.activeFlow") }, [
         UI.el("span", { class: "muted", text: "⊟" }),
         UI.el("span", { class: "trunc", style: { maxWidth: "148px" }, text: this.activeFlowLabel() })
       ]);
@@ -195,7 +201,7 @@
       const connected = Boolean(this.health && this.health.ok);
       pills.appendChild(UI.el("div", { class: "status-pill" }, [
         UI.el("span", { class: "dot" + (connected ? "" : " off") }),
-        UI.el("span", { text: connected ? "Trust verified" : "Servidor inactivo" })
+        UI.el("span", { text: connected ? t("header.trust") : t("header.serverDown") })
       ]));
 
       /* perfil activo (real) */
@@ -205,16 +211,16 @@
         value: p.id, selected: profile && p.id === profile.id,
         text: p.label + (p.has_key ? "" : " · sin clave")
       })));
-      if (!this.profiles.length) select.appendChild(UI.el("option", { text: "sin perfiles" }));
+      if (!this.profiles.length) select.appendChild(UI.el("option", { text: t("header.noProfiles") }));
       pills.appendChild(UI.el("div", { class: "status-pill" }, [
-        UI.el("span", { class: "muted", text: "perfil" }),
+        UI.el("span", { class: "muted", text: t("header.profile") }),
         select
       ]));
 
       /* estado de la clave */
-      const keyState = !profile ? "sin perfil"
-        : !profile.has_key ? "sin clave"
-        : profile.is_test_key ? "clave de prueba" : "clave propia";
+      const keyState = !profile ? t("header.noProfile")
+        : !profile.has_key ? t("header.noKey")
+        : profile.is_test_key ? t("header.testKey") : t("header.ownKey");
       pills.appendChild(UI.el("div", {
         class: "status-pill",
         title: profile ? profile.key_var + " · " + (profile.masked_key || "sin valor") : ""
@@ -224,34 +230,34 @@
       ]));
 
       /* probar conexión */
-      const testBtn = UI.el("button", { class: "icon-btn", html: "▷", title: "Probar conexión con el proveedor" });
+      const testBtn = UI.el("button", { class: "icon-btn", html: "▷", title: t("header.testConn") });
       testBtn.addEventListener("click", async () => {
         testBtn.disabled = true;
         try {
           const result = await API.testProfile(this.profileId(), "chat");
-          if (result.ok) UI.toast("ok", "Conexión verificada", result.detail + " · " + result.latency_ms + " ms");
-          else if (result.reachable) UI.toast("warn", "Endpoint alcanzable · clave rechazada", "HTTP " + result.status + " — " + result.detail);
-          else UI.toast("err", "Sin respuesta del endpoint", result.detail);
+          if (result.ok) UI.toast("ok", t("conn.verified"), result.detail + " · " + result.latency_ms + " ms");
+          else if (result.reachable) UI.toast("warn", t("conn.reachable"), "HTTP " + result.status + " — " + result.detail);
+          else UI.toast("err", t("conn.noResponse"), result.detail);
           if (this.route === "integrations" || this.route === "dashboard") this.render();
         } catch (err) {
-          UI.toast("err", "Prueba fallida", err.message);
+          UI.toast("err", t("conn.failed"), err.message);
         }
         testBtn.disabled = false;
       });
       pills.appendChild(testBtn);
 
       pills.appendChild(UI.el("button", {
-        class: "icon-btn", html: "⚙", title: "Ajustes",
+        class: "icon-btn", html: "⚙", title: t("header.settings"),
         onclick: () => Settings.openModal(this)
       }));
 
       pills.appendChild(UI.el("button", {
-        class: "icon-btn", html: "◔", title: "Historial de llamadas",
+        class: "icon-btn", html: "◔", title: t("header.calls"),
         onclick: () => this.navigate("jobs")
       }));
 
-      pills.appendChild(UI.el("div", { class: "status-pill click", title: "Sesión local", onclick: () => this.navigate("config") }, [
-        UI.el("span", { text: "Operador" })
+      pills.appendChild(UI.el("div", { class: "status-pill click", title: t("header.localSession"), onclick: () => this.navigate("config") }, [
+        UI.el("span", { text: t("header.operator") })
       ]));
 
       header.appendChild(pills);
@@ -262,16 +268,19 @@
       const nav = UI.$("#nav");
       if (!nav) return;
       UI.clear(nav);
+      const groupKey = { "Desarrollo": "nav.desarrollo", "Orquestación": "nav.orquestacion", "Operaciones": "nav.operaciones", "Inspección": "nav.inspeccion" };
       NAV.forEach((group) => {
-        nav.appendChild(UI.el("div", { class: "nav-group" }, [UI.el("span", { text: group.group })]));
+        const gLabel = window.I18N ? t(groupKey[group.group] || group.group) : group.group;
+        nav.appendChild(UI.el("div", { class: "nav-group" }, [UI.el("span", { text: gLabel })]));
         (group.items || []).forEach((item) => {
+          const desc = window.I18N ? (t("navdesc." + item.id) !== "navdesc." + item.id ? t("navdesc." + item.id) : (item.desc || "")) : (item.desc || "");
           const link = UI.el("a", {
             class: item.id === this.route ? "active" : "",
             href: "#/" + item.id,
             title: item.label
           }, [
             UI.el("span", { class: "nav-title", text: item.label }),
-            UI.el("span", { class: "nav-desc", text: item.desc || "" })
+            UI.el("span", { class: "nav-desc", text: desc })
           ]);
           if (item.id === "tools" && this.mcp && this.mcp.status === "configured") {
             link.appendChild(UI.el("span", { class: "badge-dot", text: this.mcp.servers.length }));
@@ -356,6 +365,18 @@
     async boot() {
       Settings.apply();
 
+      /* Módulos nuevos no declarados en el HTML base: i18n y visor de archivos.
+         Se cargan antes del primer render para que t()/FileViewer existan. */
+      const loadScript = (src) => new Promise((resolve) => {
+        const el = document.createElement("script");
+        el.src = src + "?v=" + Date.now();
+        el.onload = resolve;
+        el.onerror = resolve;
+        document.head.appendChild(el);
+      });
+      await loadScript("js/i18n.js");
+      await loadScript("js/viewer.js");
+
       const side = document.querySelector("aside");
       if (side) {
         const collapse = side.querySelector(".collapse");
@@ -383,7 +404,9 @@
 
       this.route = (location.hash || "#/dashboard").replace("#/", "");
       window.addEventListener("hashchange", () => {
-        this.route = (location.hash || "#/dashboard").replace("#/", "");
+        const next = (location.hash || "#/dashboard").replace("#/", "");
+        if (next === "chat" && this.route !== "chat") this.routeBeforeChat = this.route;
+        this.route = next;
         document.body.classList.remove("nav-open");
         this.render();
       });

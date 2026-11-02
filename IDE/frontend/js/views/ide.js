@@ -12,10 +12,12 @@
 
   window.Views.ide = function (view, App) {
     const state = {
-      source: localStorage.getItem("ely.ideSource") === "repo" ? "repo" : "workspace",
+      source: ["repo", "storage"].includes(localStorage.getItem("ely.ideSource")) ? localStorage.getItem("ely.ideSource") : "workspace",
       repo: localStorage.getItem("ely.ideRepo") || null,
       repos: [],
       repoTree: null,
+      storageProfile: localStorage.getItem("ely.ideStorageProfile") || null,
+      storageTree: null,
       tree: null,
       tabs: (Store.get("ideTabs") || []).slice(0, 8),
       active: Store.get("ideFile") || "README.md",
@@ -43,12 +45,30 @@
       onchange: (event) => {
         state.source = event.target.value;
         localStorage.setItem("ely.ideSource", state.source);
-        renderTree();
+        storageSelect.style.display = state.source === "storage" ? "" : "none";
+        repoSelect.style.display = state.source === "repo" ? "" : "none";
+        state.tabs = []; state.docs = {}; state.active = null;
+        renderTabs(); renderActions(); renderTree();
+        if (state.source === "repo") loadRepoTree();
+        else if (state.source === "storage") loadStorageTree();
+        else loadTree();
       }
     }, [
       UI.el("option", { value: "workspace", selected: state.source === "workspace", text: "Workspace" }),
-      UI.el("option", { value: "repo", selected: state.source === "repo", text: "Repo" })
+      UI.el("option", { value: "repo", selected: state.source === "repo", text: "Repo" }),
+      UI.el("option", { value: "storage", selected: state.source === "storage", text: "Local Storage" })
     ]);
+
+    const storageSelect = UI.el("select", {
+      style: { height: "22px", minHeight: "22px", fontSize: "10px", padding: "0 4px", maxWidth: "128px", display: state.source === "storage" ? "" : "none" },
+      title: "Perfil de Local Storage",
+      onchange: (event) => {
+        state.storageProfile = event.target.value || null;
+        localStorage.setItem("ely.ideStorageProfile", state.storageProfile || "");
+        state.storageTree = null; state.tabs = []; state.docs = {}; state.active = null;
+        renderTabs(); renderActions(); loadStorageTree();
+      }
+    });
 
     const repoSelect = UI.el("select", {
       style: { height: "22px", minHeight: "22px", fontSize: "10px", padding: "0 4px", maxWidth: "128px" },
@@ -67,13 +87,15 @@
       }
     });
 
+    repoSelect.style.display = state.source === "repo" ? "" : "none";
     const fileHead = UI.el("div", { class: "head", style: { flexWrap: "wrap", gap: "4px" } }, [
       sourceSelect,
       repoSelect,
+      storageSelect,
       UI.el("button", {
         class: "btn ghost sm", style: { marginLeft: "auto", padding: "0 6px" },
         html: "⟳", title: "Recargar árbol",
-        onclick: () => { if (state.source === "repo") loadRepoTree(); else loadTree(); }
+        onclick: () => { if (state.source === "repo") loadRepoTree(); else if (state.source === "storage") loadStorageTree(); else loadTree(); }
       })
     ]);
     const fileList = UI.el("div", { class: "list" });
@@ -128,9 +150,42 @@
       }
     }
 
+    /* ---- Local Storage como origen del IDE ---- */
+    function renderStorageOptions() {
+      UI.clear(storageSelect);
+      const profiles = App.profiles || [];
+      if (!profiles.length) {
+        storageSelect.appendChild(UI.el("option", { value: "", text: "sin perfiles" }));
+        storageSelect.disabled = true;
+        return;
+      }
+      storageSelect.disabled = false;
+      if (!state.storageProfile || !profiles.some((p) => p.id === state.storageProfile)) {
+        state.storageProfile = App.profileId() || profiles[0].id;
+        localStorage.setItem("ely.ideStorageProfile", state.storageProfile);
+      }
+      profiles.forEach((p) => {
+        storageSelect.appendChild(UI.el("option", { value: p.id, selected: p.id === state.storageProfile, text: p.label }));
+      });
+    }
+
+    async function loadStorageTree() {
+      renderStorageOptions();
+      if (!state.storageProfile) { state.storageTree = { entries: [] }; renderTree(); return; }
+      try {
+        state.storageTree = await API.request("/storage/tree?profile=" + encodeURIComponent(state.storageProfile));
+        renderTree();
+      } catch (err) {
+        UI.clear(fileList);
+        fileList.appendChild(UI.errBox(err, loadStorageTree));
+      }
+    }
+
+    const RICH_EXT = ["pdf", "html", "htm", "tex", "latex", "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "md", "csv"];
+
     function renderTree() {
       UI.clear(fileList);
-      const tree = state.source === "repo" ? state.repoTree : state.tree;
+      const tree = state.source === "repo" ? state.repoTree : state.source === "storage" ? state.storageTree : state.tree;
       if (state.source === "repo" && !state.repos.length) {
         fileList.appendChild(UI.el("div", { class: "empty", style: { padding: "18px 10px" } }, [
           UI.el("div", { class: "big", text: "◫" }),
@@ -148,6 +203,8 @@
       /* Directorios desplegados por defecto según el origen. */
       const openDirs = state.source === "repo"
         ? new Set(["src", "src/vs", "src/vs/editor", "src/vs/workbench", "extensions", "cli"])
+        : state.source === "storage"
+        ? new Set(["generado", "planeado"])
         : new Set(["CLI", "IDE", "IDE/frontend", "IDE/frontend/js", "IDE/frontend/js/views",
                    "profiles", "Harness", "Harness-Candy", "MCPs"]);
 
@@ -276,6 +333,21 @@
 
     async function openFile(path, force) {
       if (!path) return;
+      const ext = (path.split(".").pop() || "").toLowerCase();
+
+      /* Formatos ricos (PDF, HTML, LaTeX, imágenes, etc.) → visor dedicado. */
+      if (RICH_EXT.includes(ext) && window.FileViewer) {
+        if (state.source === "storage") {
+          const parts = path.split("/");
+          FileViewer.openStorage(state.storageProfile, parts[0], parts.slice(1).join("/"));
+        } else if (state.source === "repo") {
+          FileViewer.openWorkspace(".ely/repos/" + state.repo + "/" + path);
+        } else {
+          FileViewer.openWorkspace(path);
+        }
+        return;
+      }
+
       if (state.dirty[state.active] && state.active !== path && !force) {
         const askOpen = !window.Settings || Settings.get("confirmClose");
         if (askOpen && !confirm("Cambios sin guardar en " + state.active + ". ¿Descartar?")) return;
@@ -295,9 +367,15 @@
       }
       area.value = "…";
       try {
-        const doc = state.source === "repo"
-          ? await API.repoFile(state.repo, path)
-          : await API.file(path);
+        let doc;
+        if (state.source === "repo") doc = await API.repoFile(state.repo, path);
+        else if (state.source === "storage") {
+          const parts = path.split("/");
+          doc = await API.request("/storage/file?profile=" + encodeURIComponent(state.storageProfile) +
+            "&kind=" + encodeURIComponent(parts[0]) + "&name=" + encodeURIComponent(parts.slice(1).join("/")));
+          if (doc.binary) throw Object.assign(new Error("Archivo binario"), { status: 415 });
+          if (!doc.lines) doc.lines = (doc.content || "").split("\n").length;
+        } else doc = await API.file(path);
         state.docs[path] = doc;
         if (state.active === path) {
           area.value = doc.content;
@@ -323,6 +401,11 @@
       if (state.source === "repo") {
         UI.toast("warn", "Repositorio de solo lectura",
           "Los repositorios importados se guardan en .ely/repos como referencia; edita el workspace local.");
+        return;
+      }
+      if (state.source === "storage") {
+        UI.toast("warn", "Local Storage de solo lectura",
+          "Los archivos de Local Storage se abren con el visor; edítalos desde su carpeta en disco.");
         return;
       }
       UI.clear(status).appendChild(UI.el("span", { text: "guardando…" }));
@@ -455,8 +538,10 @@
         return;
       }
       if (state.source === "repo" && state.repo) loadRepoTree();
+      else if (state.source === "storage") loadStorageTree();
       else if (state.active) openFile(state.active);
     });
+    if (state.source === "storage") loadStorageTree();
 
     document.addEventListener("keydown", function shortcuts(event) {
       if (App.route !== "ide") return;

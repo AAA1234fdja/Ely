@@ -366,6 +366,47 @@ class LocalStorageTest(unittest.TestCase):
         from ely_cli import routes
         self.assertIn("storage", [item["id"] for item in routes.flat()])
 
+    def test_samples_created_and_pdf_valid(self):
+        created = self.engine.storage_samples("alpha")
+        self.assertIn("ejemplo.pdf", created)
+        self.assertIn("ejemplo.tex", created)
+        self.assertIn("ejemplo.html", created)
+        pdf = (self.tmp / "Local Storage" / "alpha" / "generado" / "ejemplo.pdf").read_bytes()
+        self.assertTrue(pdf.startswith(b"%PDF-1.4"))
+        self.assertIn(b"%%EOF", pdf)
+        # idempotente: la segunda vez no recrea
+        self.assertEqual(self.engine.storage_samples("alpha"), [])
+
+    def test_storage_read_text_and_binary(self):
+        self.engine.storage_samples("alpha")
+        tex = self.engine.storage_read_file("generado", "ejemplo.tex", "alpha")
+        self.assertFalse(tex["binary"])
+        self.assertIn("documentclass", tex["content"])
+        pdf = self.engine.storage_read_file("generado", "ejemplo.pdf", "alpha")
+        self.assertTrue(pdf["binary"])
+
+    def test_storage_raw_content_type(self):
+        self.engine.storage_samples("alpha")
+        data, ctype = self.engine.storage_raw_file("generado", "ejemplo.pdf", "alpha")
+        self.assertEqual(ctype, "application/pdf")
+        html, hctype = self.engine.storage_raw_file("generado", "ejemplo.html", "alpha")
+        self.assertTrue(hctype.startswith("text/html"))
+
+    def test_storage_tree(self):
+        self.engine.storage_samples("alpha")
+        tree = self.engine.storage_tree("alpha")
+        dirs = [e["path"] for e in tree["entries"] if e["type"] == "dir"]
+        self.assertEqual(dirs, ["generado", "planeado"])
+        self.assertGreaterEqual(tree["counts"]["files"], 7)
+
+    def test_storage_read_traversal_blocked(self):
+        from ely_cli.config import ConfigError
+        self.engine.storage_samples("alpha")
+        with self.assertRaises(ConfigError):
+            self.engine.storage_read_file("generado", "../planeado/items.json", "alpha")
+        with self.assertRaises(ConfigError):
+            self.engine.storage_read_file("generado", "no-existe.txt", "alpha")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

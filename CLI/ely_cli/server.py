@@ -320,6 +320,22 @@ class ElyHandler(BaseHTTPRequestHandler):
         if method == "DELETE" and parts[:3] == ["api", "storage", "planned"] and len(parts) == 4:
             return self.json({"ok": engine.delete_planned(parts[3], self.query().get("profile"))})
 
+        if method == "GET" and route == "/storage/tree":
+            return self.json(engine.storage_tree(self.query().get("profile")))
+
+        if method == "GET" and route == "/storage/file":
+            q = self.query()
+            return self.json(engine.storage_read_file(q.get("kind", "generado"), q.get("name", ""), q.get("profile")))
+
+        if method == "GET" and route == "/storage/raw":
+            q = self.query()
+            data, ctype = engine.storage_raw_file(q.get("kind", "generado"), q.get("name", ""), q.get("profile"))
+            return self._send(200, data, ctype)
+
+        if method == "POST" and route == "/storage/samples":
+            body = self.read_json()
+            return self.json({"created": engine.storage_samples(body.get("profile"))})
+
         if method == "GET" and route == "/memory":
             return self.json({"memories": engine.memories()})
 
@@ -356,6 +372,14 @@ class ElyHandler(BaseHTTPRequestHandler):
                 ))
             except workspace.WorkspaceError as exc:
                 raise ApiError(exc.status, str(exc)) from exc
+
+        if method == "GET" and route == "/workspace/raw":
+            q = self.query()
+            try:
+                data, ctype = workspace.raw_file(engine.root, q.get("path", ""))
+            except workspace.WorkspaceError as exc:
+                raise ApiError(exc.status, str(exc)) from exc
+            return self._send(200, data, ctype)
 
         if method == "GET" and route == "/assets":
             return self.json(workspace.assets(engine.root))

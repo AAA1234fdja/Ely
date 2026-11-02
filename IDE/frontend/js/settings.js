@@ -8,6 +8,8 @@
 
   const Settings = {
     defaults: {
+      language: "es",           // es | en (idioma de la interfaz)
+      nationality: "CO",        // nacionalidad → zona horaria de las horas
       density: "comfortable",   // comfortable | compact
       stream: true,             // streaming SSE en el chat
       sendOnEnter: true,
@@ -74,23 +76,32 @@
 
     /** Panel de ajustes: preferencias locales + estado real del backend. */
     openModal(App) {
-      const ref = UI.modal({
-        title: "Ajustes",
-        subtitle: "preferencias del cliente",
-        body: this.panel(App),
+      let ref;
+      const rebuild = () => {
+        App.renderHeader();
+        App.render();
+        if (ref) {
+          UI.clear(ref.content);
+          ref.content.appendChild(this.panel(App, rebuild));
+        }
+      };
+      ref = UI.modal({
+        title: t("set.title"),
+        subtitle: t("set.subtitle"),
+        body: this.panel(App, rebuild),
         footer: [
-          UI.btn("Restablecer", () => {
+          UI.btn(t("set.reset"), () => {
             this.reset();
-            ref.close();
-            UI.toast("ok", "Ajustes restablecidos");
+            rebuild();
+            UI.toast("ok", t("set.resetDone"));
           }, { ghost: true }),
-          UI.btn("Listo", () => ref.close(), { primary: true })
+          UI.btn(t("set.done"), () => ref.close(), { primary: true })
         ]
       });
       return ref;
     },
 
-    panel(App) {
+    panel(App, rebuild) {
       const values = this.all;
       const box = UI.el("div", { class: "stack" });
 
@@ -114,42 +125,70 @@
         return UI.el("label", { class: "switch" }, [input, UI.el("span")]);
       };
 
+      /* --- idioma (español / inglés), con efecto inmediato --- */
+      const langSelect = UI.el("select", {
+        style: { width: "150px" },
+        onchange: (event) => {
+          this.set({ language: event.target.value });
+          if (rebuild) rebuild();
+        }
+      }, [
+        UI.el("option", { value: "es", selected: values.language !== "en", text: "Español" }),
+        UI.el("option", { value: "en", selected: values.language === "en", text: "English" })
+      ]);
+      box.appendChild(row(t("set.language"), t("set.languageHint"), langSelect));
+
+      /* --- nacionalidad → zona horaria de las horas --- */
+      const preview = UI.el("span", { class: "mono", style: { fontSize: "12px" }, text: I18N.fmtDateTime(new Date()) });
+      const countrySelect = UI.el("select", {
+        style: { width: "190px" },
+        onchange: (event) => {
+          this.set({ nationality: event.target.value });
+          preview.textContent = I18N.fmtDateTime(new Date());
+        }
+      }, I18N.countries.map((c) => UI.el("option", {
+        value: c.id, selected: values.nationality === c.id,
+        text: (I18N.lang() === "en" ? c.en : c.es) + " · " + c.tz.split("/").pop().replace(/_/g, " ")
+      })));
+      box.appendChild(row(t("set.nationality"), t("set.nationalityHint"), countrySelect));
+      box.appendChild(row(t("set.timePreview"), "mes/día/año hora:minuto", preview));
+
       const density = UI.el("select", {
         style: { width: "150px" },
         onchange: (event) => this.set({ density: event.target.value })
       }, [
-        UI.el("option", { value: "comfortable", selected: values.density === "comfortable", text: "cómoda" }),
-        UI.el("option", { value: "compact", selected: values.density === "compact", text: "compacta" })
+        UI.el("option", { value: "comfortable", selected: values.density === "comfortable", text: t("set.comfortable") }),
+        UI.el("option", { value: "compact", selected: values.density === "compact", text: t("set.compact") })
       ]);
 
-      box.appendChild(row("Densidad de la interfaz", "espaciado de tarjetas y tablas", density));
-      box.appendChild(row("Streaming en el chat", "usa /api/chat/stream (SSE)", toggle("stream")));
-      box.appendChild(row("Enter envía", "Shift+Enter hace salto de línea", toggle("sendOnEnter")));
-      box.appendChild(row("Mostrar consumo", "tokens y latencia bajo cada respuesta", toggle("showUsage")));
-      box.appendChild(row("Confirmar al cerrar", "archivos con cambios sin guardar", toggle("confirmClose")));
-      box.appendChild(row("Reducir animaciones", "menos movimiento en la interfaz", toggle("reducedMotion")));
+      box.appendChild(row(t("set.density"), t("set.densityHint"), density));
+      box.appendChild(row(t("set.stream"), t("set.streamHint"), toggle("stream")));
+      box.appendChild(row(t("set.enterSends"), t("set.enterSendsHint"), toggle("sendOnEnter")));
+      box.appendChild(row(t("set.showUsage"), t("set.showUsageHint"), toggle("showUsage")));
+      box.appendChild(row(t("set.confirmClose"), t("set.confirmCloseHint"), toggle("confirmClose")));
+      box.appendChild(row(t("set.reducedMotion"), t("set.reducedMotionHint"), toggle("reducedMotion")));
 
       /* --- estado del backend, sin valores inventados --- */
       const summary = Engine.summary();
       box.appendChild(UI.el("div", { class: "divider" }));
-      box.appendChild(UI.el("h3", { style: { marginTop: 0 }, text: "Conexión activa" }));
+      box.appendChild(UI.el("h3", { style: { marginTop: 0 }, text: t("set.connection") }));
       box.appendChild(UI.el("dl", { class: "kv", style: { fontSize: "12px" } }, [
-        UI.el("dt", { text: "servidor" }),
-        UI.el("dd", null, [UI.badge(summary.connected ? "en línea" : "sin respuesta", summary.connected ? "ok" : "err")]),
-        UI.el("dt", { text: "perfil" }),
+        UI.el("dt", { text: t("set.server") }),
+        UI.el("dd", null, [UI.badge(summary.connected ? t("set.online") : t("set.offline"), summary.connected ? "ok" : "err")]),
+        UI.el("dt", { text: t("set.profile") }),
         UI.el("dd", { text: summary.profile ? summary.profile.label : "—" }),
-        UI.el("dt", { text: "modelo" }),
+        UI.el("dt", { text: t("set.model") }),
         UI.el("dd", { class: "mono", text: summary.model || "—" }),
-        UI.el("dt", { text: "clave" }),
+        UI.el("dt", { text: t("set.key") }),
         UI.el("dd", { text: summary.keyState }),
-        UI.el("dt", { text: "endpoint" }),
+        UI.el("dt", { text: t("set.endpoint") }),
         UI.el("dd", { class: "mono", style: { fontSize: "11px" }, text: summary.endpoint || "—" }),
-        UI.el("dt", { text: "MCPs" }),
+        UI.el("dt", { text: t("set.mcps") }),
         UI.el("dd", { text: Engine.mcp ? Engine.mcp.status : "—" })
       ]));
       box.appendChild(UI.el("div", { class: "row", style: { marginTop: "10px" } }, [
-        UI.btn("Integraciones", () => { App.navigate("integrations"); }, { small: true, ghost: true }),
-        UI.btn("Configuración", () => { App.navigate("config"); }, { small: true, ghost: true })
+        UI.btn(t("set.integrations"), () => { App.navigate("integrations"); }, { small: true, ghost: true }),
+        UI.btn(t("set.config"), () => { App.navigate("config"); }, { small: true, ghost: true })
       ]));
 
       return box;

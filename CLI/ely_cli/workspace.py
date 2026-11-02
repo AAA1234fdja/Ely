@@ -104,6 +104,20 @@ def read_file(root: Path, rel: str) -> dict[str, Any]:
     }
 
 
+def raw_file(root: Path, rel: str) -> tuple[bytes, str]:
+    """Bytes + content-type de un archivo del workspace (para PDF/imágenes)."""
+    import mimetypes
+    target = _safe(root, rel)
+    if not target.is_file():
+        raise WorkspaceError(404, f"No existe: {rel}")
+    if target.stat().st_size > 20_000_000:
+        raise WorkspaceError(413, "Archivo demasiado grande para el visor")
+    ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+    if ctype.startswith("text/") or ctype in {"application/javascript", "application/json", "image/svg+xml"}:
+        ctype += "; charset=utf-8"
+    return target.read_bytes(), ctype
+
+
 def write_file(root: Path, rel: str, content: str) -> dict[str, Any]:
     target = _safe(root, rel)
     if target.suffix.lower() not in TEXT_EXT:

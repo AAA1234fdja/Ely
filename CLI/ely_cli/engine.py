@@ -321,6 +321,18 @@ class Engine:
     def delete_planned(self, item_id: str, profile_id: str | None = None) -> bool:
         return self._storage(profile_id).delete_planned(item_id)
 
+    def storage_tree(self, profile_id: str | None = None) -> dict[str, Any]:
+        return self._storage(profile_id).tree()
+
+    def storage_read_file(self, kind: str, name: str, profile_id: str | None = None) -> dict[str, Any]:
+        return self._storage(profile_id).read_file(kind, name)
+
+    def storage_raw_file(self, kind: str, name: str, profile_id: str | None = None) -> tuple[bytes, str]:
+        return self._storage(profile_id).raw_file(kind, name)
+
+    def storage_samples(self, profile_id: str | None = None) -> list[str]:
+        return self._storage(profile_id).ensure_samples()
+
     # ------------------------------------------------------------------ memoria
     def memories(self) -> list[dict[str, Any]]:
         return self._read_json("memory.json", [])
