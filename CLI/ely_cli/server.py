@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import re
 import socket
 import sys
 import urllib.parse
@@ -476,7 +477,35 @@ class ElyHandler(BaseHTTPRequestHandler):
         ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
         if ctype.startswith("text/") or ctype in ("application/javascript", "application/json"):
             ctype += "; charset=utf-8"
-        self._send(200, target.read_bytes(), ctype)
+        data = target.read_bytes()
+        if target.resolve() == (self.frontend / "index.html").resolve():
+            data = self._bust_assets(data)
+        self._send(200, data, ctype)
+
+    def _bust_assets(self, html: bytes) -> bytes:
+        """Añade ?v=<mtime> a cada asset local del HTML servido.
+
+        El index.html en disco permanece byte a byte intacto; solo la
+        respuesta HTTP lleva el token. Cualquier cambio en un .css o .js
+        fuerza al navegador y a los proxies intermedios a pedir la versión
+        nueva, sin depender de que respeten Cache-Control.
+        """
+        text = html.decode("utf-8")
+
+        def repl(match: re.Match) -> str:
+            attr, quote, url = match.group(1), match.group(2), match.group(3)
+            base = url.split("?", 1)[0]
+            if base.startswith(("http://", "https://", "//", "data:")):
+                return match.group(0)
+            asset = (self.frontend / base).resolve()
+            try:
+                token = str(asset.stat().st_mtime_ns)
+            except OSError:
+                token = "0"
+            return f"{attr}={quote}{base}?v={token}{quote}"
+
+        pattern = r"""(href|src)=(["'])([^"']+?\.(?:css|js))(?:\?[^"']*)?\2"""
+        return re.sub(pattern, repl, text).encode("utf-8")
 
 
 def _local_ip() -> str:

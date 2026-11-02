@@ -77,6 +77,13 @@
     const agent = App.agent();
     const profile = App.profile();
 
+    /* Conversación que llega desde el widget flotante al pulsar "expandir". */
+    if (window.__elyWidgetHandoff) {
+      state.messages = window.__elyWidgetHandoff.messages || [];
+      state.sessionId = window.__elyWidgetHandoff.sessionId || newId();
+      window.__elyWidgetHandoff = null;
+    }
+
     if (!state.sessionId) state.sessionId = newId();
 
     /* ------------------------------------------------------------ estructura */

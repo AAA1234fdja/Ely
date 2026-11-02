@@ -288,6 +288,7 @@
       this.renderHeader();
       /* El botón flotante sobra cuando ya estás en el chat. */
       if (this.chatFab) this.chatFab.style.display = this.route === "chat" ? "none" : "flex";
+      if (window.ChatWidget) ChatWidget.onRoute(this.route);
       const view = UI.$("#view");
       if (!view || !this.connected) return;
       UI.clear(view);
@@ -361,14 +362,21 @@
          (oculta por CSS): botón flotante verde abajo a la derecha. Se crea
          en tiempo de ejecución, como #toasts, sin tocar el HTML base. */
       const fab = UI.el("button", {
-        id: "chat-fab", title: "Abrir chat (CLI)", "aria-label": "Abrir chat",
-        onclick: () => this.navigate("chat")
+        id: "chat-fab", title: "Abrir chat", "aria-label": "Abrir chat",
+        onclick: () => { if (window.ChatWidget) ChatWidget.toggle(); else this.navigate("chat"); }
       }, [
         UI.el("span", { class: "fab-icon", text: "❯" }),
         UI.el("span", { text: "Chat" })
       ]);
       document.body.appendChild(fab);
       this.chatFab = fab;
+
+      /* Widget de chat desplegable: módulo no declarado en el HTML base,
+         se carga en tiempo de ejecución (como las vistas LAZY). */
+      const ws = document.createElement("script");
+      ws.src = "js/chat-widget.js?v=" + Date.now();
+      ws.onload = () => { if (window.ChatWidget) ChatWidget.init(this, fab); };
+      document.head.appendChild(ws);
 
       this.route = (location.hash || "#/dashboard").replace("#/", "");
       window.addEventListener("hashchange", () => {
