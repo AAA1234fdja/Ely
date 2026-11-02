@@ -10,7 +10,7 @@
 
     root.appendChild(UI.head(
       "Skills",
-      "Una skill es una instrucción reutilizable que se antepone al prompt y se ejecuta con un agente concreto. Se guarda en <span class='mono'>.ely/skills.json</span>.",
+      "Edita y revisa skills",
       [UI.btn("Nueva skill", () => editor(), { primary: true, icon: "＋" })]
     ));
     root.appendChild(grid);
@@ -69,7 +69,7 @@
         body: UI.el("div", { class: "stack" }, [
           UI.el("pre", {
             class: "mono",
-            style: { whiteSpace: "pre-wrap", fontSize: "11.5px", background: "#0a0c12", padding: "10px", borderRadius: "8px", border: "1px solid var(--border)", margin: 0, maxHeight: "140px", overflow: "auto" },
+            style: { whiteSpace: "pre-wrap", fontSize: "11.5px", background: "var(--bg)", padding: "10px", borderRadius: "8px", border: "1px solid var(--border)", margin: 0, maxHeight: "140px", overflow: "auto" },
             text: skill.instruction || "(sin instrucción)"
           }),
           input,

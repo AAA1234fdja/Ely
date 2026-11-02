@@ -7,8 +7,8 @@
   window.Views.tools = function (view, App) {
     const root = UI.el("div", { class: "stack" });
     root.appendChild(UI.head(
-      "Herramientas",
-      "Catálogo declarado por el servidor. El estado de MCPs se lee de la carpeta <span class='mono'>MCPs/</span>: si no hay manifiestos, Ely lo indica y no inventa servidores.",
+      "Tools",
+      "Herramientas y llamadas",
       [UI.btn("Recargar", () => App.render(), { ghost: true, small: true })]
     ));
 

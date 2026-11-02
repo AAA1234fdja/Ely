@@ -51,7 +51,7 @@
       bubble.innerHTML = UI.md(msg.content);
       bubble.appendChild(UI.el("div", {
         class: "mono",
-        style: { marginTop: "8px", color: "#ffaab1", fontSize: "11px" },
+        style: { marginTop: "8px", color: "var(--red)", fontSize: "11px" },
         text: msg.error
       }));
     } else {

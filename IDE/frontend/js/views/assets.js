@@ -7,8 +7,8 @@
   window.Views.assets = function (view, App) {
     const root = UI.el("div", { class: "stack" });
     root.appendChild(UI.head(
-      "Activos",
-      "Inventario calculado recorriendo el sistema de archivos real. Incluye CLI, IDE, profiles, Harness y MCPs tal como están en disco.",
+      "Asset Browser",
+      "Archivos y activos del workflow",
       [UI.btn("IDE", () => App.navigate("ide"), { ghost: true, small: true })]
     ));
 

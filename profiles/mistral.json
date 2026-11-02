@@ -5,5 +5,5 @@
   "base_url": "https://api.mistral.ai/v1",
   "model": "mistral-small-latest",
   "key_var": "MISTRAL_API_KEY",
-  "color": "#ff7000"
+  "color": "#fbbf24"
 }

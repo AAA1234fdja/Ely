@@ -7,8 +7,8 @@
   window.Views.config = function (view, App) {
     const root = UI.el("div", { class: "stack" });
     root.appendChild(UI.head(
-      "Configuración",
-      "Datos que reporta el proceso del servidor. Nada se inventa en el cliente: todo viene de <span class='mono'>GET /api/config</span>, <span class='mono'>/api/health</span> y <span class='mono'>/api/mcp</span>.",
+      "Configuration",
+      "Ajustes y políticas",
       [UI.btn("Recargar", () => App.refresh(), { ghost: true, small: true, icon: "⟳" })]
     ));
 
@@ -75,7 +75,7 @@
     cli.appendChild(UI.el("h3", { text: "CLI" }));
     cli.appendChild(UI.el("pre", {
       class: "mono",
-      style: { margin: 0, background: "#0a0c12", padding: "12px", borderRadius: "10px", border: "1px solid var(--border)", fontSize: "11.5px", whiteSpace: "pre-wrap" },
+      style: { margin: 0, background: "var(--bg)", padding: "12px", borderRadius: "10px", border: "1px solid var(--border)", fontSize: "11.5px", whiteSpace: "pre-wrap" },
       text: [
         "./CLI/ely serve --port 8765   # esta interfaz",
         "./CLI/ely test               # prueba real de las 11 claves",

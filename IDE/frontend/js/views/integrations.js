@@ -9,8 +9,8 @@
     const probeState = {};
 
     root.appendChild(UI.head(
-      "Integraciones",
-      "Cada perfil declara un endpoint real y el nombre de la variable que contiene su clave. " +
+      "Integrations",
+      "Conecta sistemas externos" +
       "«Probar» lanza una petición HTTP de verdad (max_tokens=1) y devuelve el código del proveedor.",
       [
         UI.btn("Probar todos", async (event) => {
@@ -40,7 +40,7 @@
             body: UI.el("div", { class: "stack" }, [
               UI.el("p", { class: "dim", style: { margin: 0 }, text: "El repositorio incluye 11 fixtures APikeyexample-n (n = 1…11) para validar el flujo completo. No sirven para autenticar: el proveedor responde 401/403." }),
               UI.el("p", { class: "dim", style: { margin: 0 }, text: "Para usar credenciales reales, guárdalas fuera de git en .ely/keys.env con el nombre de variable de cada perfil. También puedes escribirlas desde cada tarjeta." }),
-              UI.el("pre", { class: "mono", style: { background: "#0a0c12", padding: "12px", borderRadius: "10px", border: "1px solid var(--border)" },
+              UI.el("pre", { class: "mono", style: { background: "var(--bg)", padding: "12px", borderRadius: "10px", border: "1px solid var(--border)" },
                 text: "# .ely/keys.env  (ignorado por git)\nOPENAI_API_KEY=sk-...\nANTHROPIC_API_KEY=sk-ant-...\nGROQ_API_KEY=gsk_...\n\n# o variable de entorno:\nexport OPENAI_API_KEY=sk-..." }),
               UI.el("p", { class: "muted", style: { margin: 0, fontSize: "12px" }, text: "Prioridad: entorno > .ely/keys.env > profiles/test-keys.env." })
             ])
@@ -101,7 +101,7 @@
 
         if (probe && !probe.ok && probe.detail) {
           card.appendChild(UI.el("p", {
-            style: { fontSize: "11.5px", margin: "10px 0 0", color: probe.reachable ? "#ffd48a" : "#ffaab1" },
+            style: { fontSize: "11.5px", margin: "10px 0 0", color: probe.reachable ? "var(--amber)" : "var(--red)" },
             text: probe.detail
           }));
         }

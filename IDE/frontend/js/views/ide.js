@@ -21,7 +21,10 @@
     };
     if (!state.tabs.length) state.tabs = ["README.md"];
 
+    const wrapper = UI.el("div", { style: { display: "flex", flexDirection: "column", flex: "1", minHeight: 0 } });
+    wrapper.appendChild(UI.head("IDE", "Editor de código con IA", []));
     const root = UI.el("div", { class: "ide", style: { flex: "1", minHeight: 0 } });
+    wrapper.appendChild(root);
     const filesCol = UI.el("div", { class: "ide-files" });
     const mainCol = UI.el("div", { class: "ide-main" });
     const chatCol = UI.el("div", { class: "ide-chat" });
@@ -341,6 +344,6 @@
       }
     });
 
-    return root;
+    return wrapper;
   };
 })();

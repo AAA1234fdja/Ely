@@ -11,7 +11,7 @@
 
     root.appendChild(UI.head(
       "Canvas",
-      "Grafo de los nodos declarados por el backend. Selecciona un nodo para ver sus parámetros y ejecutarlo.",
+      "Diseña y orquesta visualmente",
       [UI.btn("Reencuadrar", () => draw(), { small: true, ghost: true })]
     ));
 

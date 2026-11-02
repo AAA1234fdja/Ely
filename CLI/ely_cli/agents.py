@@ -43,7 +43,7 @@ AGENTS: list[Agent] = [
         name="Photon",
         role="Agente orquestador",
         icon="◈",
-        color="#7c5cff",
+        color="#8b9cff",
         temperature=0.5,
         system=(
             "Eres Photon, el agente orquestador de Ely Cowork. Responde siempre en "
@@ -62,7 +62,7 @@ AGENTS: list[Agent] = [
         name="Codey",
         role="Ingeniería y código",
         icon="⌘",
-        color="#3ddc97",
+        color="#34d399",
         temperature=0.2,
         max_tokens=2000,
         system=(
@@ -79,7 +79,7 @@ AGENTS: list[Agent] = [
         name="Lint",
         role="Revisión y seguridad",
         icon="⌦",
-        color="#ffb020",
+        color="#fbbf24",
         temperature=0.1,
         max_tokens=1500,
         system=(
@@ -97,7 +97,7 @@ AGENTS: list[Agent] = [
         name="Ink",
         role="Documentación",
         icon="✎",
-        color="#4aa8ff",
+        color="#60a5fa",
         temperature=0.4,
         system=(
             "Eres Ink, redactor técnico de Ely Cowork. Documentas APIs y módulos con "
@@ -113,7 +113,7 @@ AGENTS: list[Agent] = [
         name="Query",
         role="Datos y análisis",
         icon="▤",
-        color="#00d1c1",
+        color="#34d399",
         temperature=0.2,
         system=(
             "Eres Query, analista de datos de Ely Cowork. Escribes SQL correcto "
@@ -128,7 +128,7 @@ AGENTS: list[Agent] = [
         name="Deploy",
         role="Infra y automatización",
         icon="⚙",
-        color="#ff6b8a",
+        color="#f87171",
         temperature=0.2,
         max_tokens=1500,
         system=(
@@ -144,7 +144,7 @@ AGENTS: list[Agent] = [
         name="Nucleus",
         role="Terminal y sistema",
         icon="❯",
-        color="#9aa0b4",
+        color="#7b8397",
         temperature=0.1,
         system=(
             "Eres Nucleus, copiloto de terminal de Ely Cowork. Respondes con el "
@@ -159,7 +159,7 @@ AGENTS: list[Agent] = [
         name="Nova",
         role="Producto y estrategia",
         icon="✦",
-        color="#c084fc",
+        color="#8b9cff",
         temperature=0.7,
         system=(
             "Eres Nova, estratega de producto de Ely Cowork. Conviertes ideas vagas "
@@ -186,7 +186,7 @@ def workflows() -> list[dict[str, Any]]:
             "id": "feature",
             "name": "Implementar feature",
             "icon": "⚡",
-            "color": "#7c5cff",
+            "color": "#8b9cff",
             "steps": 4,
             "agents": ["product", "dev", "review"],
             "desc": "Especificación → implementación → revisión de código.",
@@ -201,7 +201,7 @@ def workflows() -> list[dict[str, Any]]:
             "id": "debug",
             "name": "Depurar error",
             "icon": "⌘",
-            "color": "#3ddc97",
+            "color": "#34d399",
             "steps": 3,
             "agents": ["shell", "dev", "review"],
             "desc": "Causa raíz → parche → verificación.",
@@ -215,7 +215,7 @@ def workflows() -> list[dict[str, Any]]:
             "id": "docs",
             "name": "Documentar módulo",
             "icon": "✎",
-            "color": "#4aa8ff",
+            "color": "#60a5fa",
             "steps": 2,
             "agents": ["docs", "review"],
             "desc": "Borrador de referencia y corrección técnica.",
@@ -228,7 +228,7 @@ def workflows() -> list[dict[str, Any]]:
             "id": "ship",
             "name": "Preparar despliegue",
             "icon": "⚙",
-            "color": "#ff6b8a",
+            "color": "#f87171",
             "steps": 3,
             "agents": ["ops", "review", "docs"],
             "desc": "Manifiestos, auditoría y runbook.",

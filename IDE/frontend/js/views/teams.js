@@ -9,8 +9,8 @@
     let state = { teams: [], tasks: [] };
 
     root.appendChild(UI.head(
-      "Equipos",
-      "Un equipo es una lista ordenada de agentes con un rol asignado. Al ejecutarlo, el servidor llama a cada agente en cadena contra el perfil activo.",
+      "Agent Teams",
+      "Coordina equipos y roles",
       [UI.btn("Nuevo equipo", () => teamModal(), { primary: true, icon: "＋" })]
     ));
 
@@ -157,7 +157,7 @@
           bubble
         ]));
       });
-      if (task.error) panel.appendChild(UI.el("p", { style: { color: "#ffaab1", fontSize: "12px" }, text: task.error }));
+      if (task.error) panel.appendChild(UI.el("p", { style: { color: "var(--red)", fontSize: "12px" }, text: task.error }));
     }
 
     function render() {

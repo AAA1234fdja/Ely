@@ -11,7 +11,7 @@
 
     root.appendChild(UI.head(
       "Pairing",
-      "Token emitido por el servidor en <span class='mono'>.ely/pairing.json</span> y rotable. La API escucha en la misma URL del IDE; el token identifica la instalación en clientes externos.",
+      "Vincula dispositivos",
       []
     ));
 
@@ -56,7 +56,7 @@
         UI.el("dd", null, [
           UI.el("pre", {
             class: "mono",
-            style: { margin: 0, whiteSpace: "pre-wrap", fontSize: "11px", background: "#0a0c12", padding: "10px", borderRadius: "8px", border: "1px solid var(--border)" },
+            style: { margin: 0, whiteSpace: "pre-wrap", fontSize: "11px", background: "var(--bg)", padding: "10px", borderRadius: "8px", border: "1px solid var(--border)" },
             text: "# desde otro equipo de la red\nely serve --host 0.0.0.0 --port " + (data.port || 8765) + "\ncurl http://<host>:" + (data.port || 8765) + "/api/health\ncurl -H \"Authorization: Bearer " + (token ? token.slice(0, 8) + "…" : "…") + "\" http://<host>:" + (data.port || 8765) + "/api/profiles"
           })
         ])

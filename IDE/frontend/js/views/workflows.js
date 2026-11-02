@@ -11,7 +11,7 @@
 
     root.appendChild(UI.head(
       "Workflows",
-      "Cada workflow encadena varios agentes: la salida de un paso es la entrada del siguiente. " +
+      "Define, edita y ejecuta flujos" +
       "Todas las llamadas son HTTP reales contra el perfil activo.",
       []
     ));

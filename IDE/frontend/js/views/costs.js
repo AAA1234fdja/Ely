@@ -7,8 +7,8 @@
   window.Views.costs = function (view, App) {
     const root = UI.el("div", { class: "stack" });
     root.appendChild(UI.head(
-      "Costes",
-      "Los tokens provienen del campo <span class='mono'>usage</span> que devuelve el proveedor. El coste solo se calcula si el perfil declara <span class='mono'>rates.input_per_mtok</span> y <span class='mono'>rates.output_per_mtok</span>.",
+      "Cost Tracker",
+      "Gasto y eficiencia",
       [UI.btn("Integraciones", () => App.navigate("integrations"), { ghost: true, small: true })]
     ));
 
@@ -66,7 +66,7 @@
       note.appendChild(UI.el("p", { class: "dim", style: { fontSize: "12.5px", margin: "0 0 10px" }, text: data.note }));
       note.appendChild(UI.el("pre", {
         class: "mono",
-        style: { margin: 0, background: "#0a0c12", padding: "12px", borderRadius: "10px", border: "1px solid var(--border)", fontSize: "11.5px" },
+        style: { margin: 0, background: "var(--bg)", padding: "12px", borderRadius: "10px", border: "1px solid var(--border)", fontSize: "11.5px" },
         text: '// profiles/openai.json\n{\n  "id": "openai",\n  "rates": { "input_per_mtok": 0.15, "output_per_mtok": 0.60 }\n}'
       }));
     }).catch((err) => {

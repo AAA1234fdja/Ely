@@ -5,5 +5,5 @@
   "base_url": "https://api.fireworks.ai/inference/v1",
   "model": "accounts/fireworks/models/llama-v3p3-70b-instruct",
   "key_var": "FIREWORKS_API_KEY",
-  "color": "#ff5c00"
+  "color": "#f87171"
 }

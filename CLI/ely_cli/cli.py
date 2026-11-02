@@ -37,27 +37,29 @@ def bold(t: Any) -> str:
 
 
 def dim(t: Any) -> str:
-    return c(t, "2")
+    return c(t, "38;2;123;131;151")
 
 
+# Colores tomados de la misma paleta que la interfaz (#34d399, #f87171,
+# #fbbf24, #60a5fa, #8b9cff) convertidos a ANSI de 24 bits.
 def green(t: Any) -> str:
-    return c(t, "32")
+    return c(t, "38;2;52;211;153")
 
 
 def red(t: Any) -> str:
-    return c(t, "31")
+    return c(t, "38;2;248;113;113")
 
 
 def yellow(t: Any) -> str:
-    return c(t, "33")
+    return c(t, "38;2;251;191;36")
 
 
 def cyan(t: Any) -> str:
-    return c(t, "36")
+    return c(t, "38;2;96;165;250")
 
 
 def violet(t: Any) -> str:
-    return c(t, "38;5;99")
+    return c(t, "38;2;139;156;255")
 
 
 def ok(t: Any) -> str:
@@ -422,7 +424,7 @@ def cmd_routes(args: argparse.Namespace) -> int:
     for group in routes.NAV:
         print(bold(f"\n  {group['group']}"))
         for item in group["items"]:
-            print(f"   {cyan(item['icon'])} {item['label']:<18} {dim('#' + item['id']):<16} {item['subtitle']}")
+            print(f"   {cyan(item.get('icon', '·'))} {item['label']:<18} {dim('#' + item['id']):<16} {item.get('desc', '')}")
     print()
     return 0
 

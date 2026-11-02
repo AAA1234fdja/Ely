@@ -9,8 +9,8 @@
     const list = UI.el("div", { class: "stack" });
 
     root.appendChild(UI.head(
-      "Memoria",
-      "Notas guardadas en <span class='mono'>.ely/memory.json</span>. Si activas «memoria» en el chat, el servidor las añade como mensaje <span class='mono'>system</span> real.",
+      "Memory",
+      "Memoria y grafo de contexto",
       []
     ));
 

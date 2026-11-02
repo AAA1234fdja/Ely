@@ -5,6 +5,6 @@
   "base_url": "https://api.groq.com/openai/v1",
   "model": "llama-3.3-70b-versatile",
   "key_var": "GROQ_API_KEY",
-  "color": "#f55036",
+  "color": "#f87171",
   "notes": "Inferencia de baja latencia (LPU)."
 }

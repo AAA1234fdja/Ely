@@ -245,7 +245,7 @@
 
     if (opts.footer) {
       const footer = UI.el("div", { class: "footer" });
-      footer.style.cssText = "padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end";
+      footer.style.cssText = "padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:7px;justify-content:flex-end";
       (Array.isArray(opts.footer) ? opts.footer : [opts.footer]).forEach((node) => footer.appendChild(node));
       sheet.appendChild(footer);
     }

@@ -132,7 +132,7 @@ class Profile:
     base_url: str
     key_var: str
     api_key: str | None = None
-    color: str = "#7c5cff"
+    color: str = "#8b9cff"
     timeout: int = 60
     max_tokens: int = 1024
     temperature: float = 0.6
@@ -214,7 +214,7 @@ def _profile_from_dict(raw: dict[str, Any], keys: dict[str, str], source: str) -
         base_url=fill(base_url),
         key_var=key_var,
         api_key=api_key,
-        color=str(raw.get("color") or "#7c5cff"),
+        color=str(raw.get("color") or "#8b9cff"),
         timeout=int(raw.get("timeout") or 60),
         max_tokens=int(raw.get("max_tokens") or 1024),
         temperature=float(raw.get("temperature") if raw.get("temperature") is not None else 0.6),

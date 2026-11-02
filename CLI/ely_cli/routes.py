@@ -1,52 +1,53 @@
 """Navegación del IDE — fuente única para el nav y el router del frontend.
 
-El servidor expone esta tabla en /api/config para que el cliente no duplique
-la lista de vistas (el HTML carga todos los módulos; el router solo usa estos).
+Los grupos, etiquetas y descripciones siguen la estructura de la referencia
+visual. El servidor expone esta tabla en /api/routes y el cliente la consume;
+el respaldo está en js/app.js.
 """
 from __future__ import annotations
 
 from typing import Any
 
 NAV: list[dict[str, Any]] = [
-    {"group": "Trabajo", "items": [
-        {"id": "chat", "icon": "❯", "label": "Chat", "title": "Chat",
-         "subtitle": "Conversación con el perfil activo, en streaming real"},
-        {"id": "dashboard", "icon": "◈", "label": "Panel", "title": "Panel",
-         "subtitle": "Estado del sistema, telemetría y actividad reciente"},
-        {"id": "ide", "icon": "⌘", "label": "IDE", "title": "IDE",
-         "subtitle": "Editor de archivos del workspace con asistente integrado"},
-        {"id": "canvas", "icon": "⬡", "label": "Canvas", "title": "Canvas",
-         "subtitle": "Mapa de orquestación de agentes y workflows"},
+    {"group": "Desarrollo", "items": [
+        {"id": "ide", "label": "IDE", "desc": "Editor de código con IA",
+         "icon": "⌘", "title": "IDE"},
     ]},
     {"group": "Orquestación", "items": [
-        {"id": "workflows", "icon": "⚡", "label": "Workflows", "title": "Workflows",
-         "subtitle": "Rutinas multi-agente ejecutadas contra el proveedor"},
-        {"id": "agents", "icon": "✦", "label": "Agentes", "title": "Agentes",
-         "subtitle": "System prompts reales y parámetros de generación"},
-        {"id": "teams", "icon": "◎", "label": "Equipos", "title": "Equipos",
-         "subtitle": "Cadenas de agentes coordinadas por objetivo"},
-        {"id": "skills", "icon": "✧", "label": "Skills", "title": "Skills",
-         "subtitle": "Instrucciones reutilizables que se anteponen al prompt"},
-        {"id": "tools", "icon": "⚒", "label": "Herramientas", "title": "Herramientas",
-         "subtitle": "Catálogo de herramientas y estado del backend MCPs"},
-        {"id": "memory", "icon": "▤", "label": "Memoria", "title": "Memoria",
-         "subtitle": "Notas persistentes que se inyectan como contexto"},
-        {"id": "jobs", "icon": "◷", "label": "Jobs", "title": "Jobs",
-         "subtitle": "Historial de ejecuciones y llamadas"},
+        {"id": "dashboard", "label": "Dashboard", "desc": "Resumen de sesión y acciones",
+         "icon": "◈", "title": "Dashboard"},
+        {"id": "workflows", "label": "Workflows", "desc": "Define, edita y ejecuta flujos",
+         "icon": "⚡", "title": "Workflows"},
+        {"id": "agents", "label": "Agent Pool", "desc": "Reutiliza agentes y workflows",
+         "icon": "✦", "title": "Agent Pool"},
+        {"id": "canvas", "label": "Canvas", "desc": "Diseña y orquesta visualmente",
+         "icon": "⬡", "title": "Canvas"},
+        {"id": "teams", "label": "Agent Teams", "desc": "Coordina equipos y roles",
+         "icon": "◎", "title": "Agent Teams"},
     ]},
-    {"group": "Conexiones", "items": [
-        {"id": "integrations", "icon": "⇄", "label": "Integraciones", "title": "Integraciones",
-         "subtitle": "Perfiles, endpoints y API Keys"},
-        {"id": "pairing", "icon": "◉", "label": "Pairing", "title": "Pairing",
-         "subtitle": "Token de emparejamiento y endpoint de la API"},
+    {"group": "Operaciones", "items": [
+        {"id": "assets", "label": "Asset Browser", "desc": "Archivos y activos del workflow",
+         "icon": "◫", "title": "Asset Browser"},
+        {"id": "skillslib", "label": "Skills Library", "desc": "Capacidades operativas",
+         "icon": "✧", "title": "Skills Library"},
+        {"id": "skills", "label": "Skills", "desc": "Edita y revisa skills",
+         "icon": "✧", "title": "Skills"},
+        {"id": "tools", "label": "Tools", "desc": "Herramientas y llamadas",
+         "icon": "⚒", "title": "Tools"},
+        {"id": "integrations", "label": "Integrations", "desc": "Conecta sistemas externos",
+         "icon": "⇄", "title": "Integrations"},
+        {"id": "jobs", "label": "Scheduled Jobs", "desc": "Tareas programadas",
+         "icon": "◷", "title": "Scheduled Jobs"},
+        {"id": "pairing", "label": "Pairing", "desc": "Vincula dispositivos",
+         "icon": "◉", "title": "Pairing"},
+        {"id": "config", "label": "Configuration", "desc": "Ajustes y políticas",
+         "icon": "⚙", "title": "Configuration"},
     ]},
-    {"group": "Sistema", "items": [
-        {"id": "assets", "icon": "◫", "label": "Activos", "title": "Activos",
-         "subtitle": "Inventario real del repositorio"},
-        {"id": "costs", "icon": "◐", "label": "Costes", "title": "Costes",
-         "subtitle": "Tokens reales y tarifas por perfil"},
-        {"id": "config", "icon": "⚙", "label": "Configuración", "title": "Configuración",
-         "subtitle": "Entorno, rutas y endpoints del servidor"},
+    {"group": "Inspección", "items": [
+        {"id": "costs", "label": "Cost Tracker", "desc": "Gasto y eficiencia",
+         "icon": "◐", "title": "Cost Tracker"},
+        {"id": "memory", "label": "Memory", "desc": "Memoria y grafo de contexto",
+         "icon": "▤", "title": "Memory"},
     ]},
 ]
 

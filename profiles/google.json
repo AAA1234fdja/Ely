@@ -5,6 +5,6 @@
   "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
   "model": "gemini-2.0-flash",
   "key_var": "GOOGLE_API_KEY",
-  "color": "#4285f4",
+  "color": "#60a5fa",
   "notes": "Capa de compatibilidad OpenAI de Gemini."
 }

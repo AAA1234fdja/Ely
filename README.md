@@ -106,6 +106,47 @@ Los campos `{VARIABLE}` se sustituyen desde el entorno al cargar.
 Variables: `ELY_PROFILE` (perfil por defecto), `ELY_DEBUG=1` (traza de errores),
 `ELY_HTTP_LOG=1` (log de peticiones), `PORT` (puerto del IDE).
 
+## Paleta
+
+Los colores están extraídos **píxel a píxel** de las capturas de referencia y viven
+en un único sitio: el bloque `:root` de `IDE/frontend/css/styles.css`. No hay
+ningún hex suelto fuera de ahí (ni en el CSS ni en el JS).
+
+| token | valor | uso |
+|---|---|---|
+| `--bg` | `#07080c` | barra superior, franja de título, fondo global |
+| `--bg-soft` | `#090b11` | canvas, nodos, controles de formulario |
+| `--panel` | `#0d0f16` | sidebar, tarjetas, panel de detalle |
+| `--panel-2` | `#11141d` | tarjeta elevada |
+| `--panel-3` | `#151a29` | item de navegación activo |
+| `--surface-hover` | `#151a2c` | nodo seleccionado |
+| `--surface-press` | `#1c2340` | botón primario |
+| `--surface-toggle` | `#1d2748` | interruptor encendido |
+| `--border` / `--border-strong` | `#1f2431` / `#2a3040` | bordes |
+| `--text` / `--text-dim` / `--muted` | `#d9dde8` / `#7b8397` / `#4d5465` | jerarquía de texto |
+| `--accent` / `--accent-strong` | `#8b9cff` / `#5b6cff` | acento |
+| `--green` / `--amber` / `--red` / `--blue` | `#34d399` / `#fbbf24` / `#f87171` / `#60a5fa` | estados |
+| `--violet-bar` | `#6572b9` | barras de gráfica |
+
+La CLI usa los mismos valores de estado convertidos a ANSI de 24 bits, y los
+colores de agentes y perfiles del backend salen de esta misma escala.
+
+## Sin datos de ejemplo
+
+La interfaz arranca **vacía** y solo muestra lo que existe de verdad:
+
+- `skills`, `memory` y `jobs` responden `[]` hasta que crees algo.
+- `Cost Tracker` muestra llamadas y tokens reales; con el histórico limpio son 0.
+- `Agent Pool` lista los 8 agentes definidos en el backend (son reales, con su
+  system prompt), no entidades inventadas.
+- Ninguna vista contiene nombres de workflow, importes ni métricas de ejemplo.
+
+Para dejar el entorno a cero en cualquier momento:
+
+```bash
+rm -rf .ely/usage.jsonl .ely/sessions.json   # telemetría e historial de chat
+```
+
 ## IDE (frontend)
 
 `IDE/frontend/index.html` es **el HTML base original, byte a byte** (md5
@@ -121,7 +162,7 @@ módulo real:
 | `js/llm.js` | capa de modelo: `complete`, `stream`, `probe`, workflows, skills |
 | `js/settings.js` | ajustes (densidad, streaming, consumo, animaciones) y modal |
 | `js/views/ide.js` | editor del workspace + asistente con contexto del archivo |
-| `js/views/*.js` | dashboard, workflows, agents, canvas, teams, assets, skills, tools, integrations, jobs, pairing, config, costs, memory |
+| `js/views/*.js` | dashboard, workflows, agents, canvas, teams, assets, skillslib, skills, tools, integrations, jobs, pairing, config, costs, memory |
 | `js/chat.js` | chat con streaming SSE y sesiones |
 | `js/app.js` | router, cabecera y arranque |
 
@@ -129,7 +170,7 @@ El HTML solo trae `<div id="modal">`; el contenedor de toasts (`#toasts`) lo cre
 `ui.js` en tiempo de ejecución, sin tocar el documento original.
 
 
-16 vistas sobre ese HTML, sin build ni dependencias de CDN:
+17 vistas sobre ese HTML, sin build ni dependencias de CDN:
 
 - **Chat** — streaming SSE real, selección de agente/perfil, sesiones guardadas.
 - **Panel** — estado del sistema, tokens, coste y actividad reciente.

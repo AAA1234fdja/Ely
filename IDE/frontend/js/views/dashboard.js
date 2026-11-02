@@ -9,7 +9,7 @@
     const profile = App.profile();
 
     root.appendChild(UI.el("div", { class: "hero" }, [
-      UI.el("h2", { text: "Ely Cowork" }),
+      UI.el("h2", { text: "Dashboard" }),
       UI.el("p", {
         html: "Agent OS local. La interfaz habla con el servidor Python, que firma cada petición con la clave del perfil activo. " +
           "Sin respuestas simuladas: si el proveedor falla, lo verás aquí."
@@ -53,7 +53,7 @@
           ]),
           result.error_detail ? UI.el("pre", {
             class: "mono",
-            style: { whiteSpace: "pre-wrap", background: "#0a0c12", padding: "10px", borderRadius: "9px", fontSize: "11px" },
+            style: { whiteSpace: "pre-wrap", background: "var(--bg)", padding: "10px", borderRadius: "9px", fontSize: "11px" },
             text: typeof result.error_detail === "string" ? result.error_detail : JSON.stringify(result.error_detail, null, 2)
           }) : null,
           result.hint ? UI.el("p", { class: "muted", style: { fontSize: "12px", margin: 0 }, text: result.hint }) : null
@@ -144,7 +144,7 @@
               UI.badge(call.ok ? "ok" : "fallo", call.ok ? "ok" : "err")
             ]),
             UI.el("small", { text: [call.kind, call.model, (call.usage && call.usage.total_tokens ? call.usage.total_tokens + " tokens" : null), UI.date(call.at)].filter(Boolean).join(" · ") }),
-            call.error ? UI.el("small", { style: { color: "#ffaab1" }, text: String(call.error).slice(0, 120) }) : null
+            call.error ? UI.el("small", { style: { color: "var(--red)" }, text: String(call.error).slice(0, 120) }) : null
           ]));
         });
         actCard.appendChild(list);

@@ -9,8 +9,8 @@
     let filter = "all";
 
     root.appendChild(UI.head(
-      "Jobs",
-      "Trazas de ejecución registradas en <span class='mono'>.ely/usage.jsonl</span>. Cada fila es una llamada HTTP real con su resultado.",
+      "Scheduled Jobs",
+      "Tareas programadas",
       [UI.btn("Actualizar", () => load(), { ghost: true, small: true, icon: "⟳" })]
     ));
 

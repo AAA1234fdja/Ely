@@ -7,8 +7,8 @@
   window.Views.agents = function (view, App) {
     const root = UI.el("div", { class: "stack" });
     root.appendChild(UI.head(
-      "Agentes",
-      "Ocho agentes con <i>system prompt</i> propio. Al chatear, el servidor envía ese prompt como mensaje <span class='mono'>system</span> real al proveedor.",
+      "Agent Pool",
+      "Reutiliza agentes y workflows",
       [UI.btn("Chat", () => App.navigate("chat"), { primary: true, icon: "❯" })]
     ));
 
@@ -56,7 +56,7 @@
             wide: true,
             body: UI.el("pre", {
               class: "mono",
-              style: { whiteSpace: "pre-wrap", lineHeight: 1.6, background: "#0a0c12", padding: "14px", borderRadius: "10px", border: "1px solid var(--border)", margin: 0 },
+              style: { whiteSpace: "pre-wrap", lineHeight: 1.6, background: "var(--bg)", padding: "14px", borderRadius: "10px", border: "1px solid var(--border)", margin: 0 },
               text: agent.system
             }),
             footer: [UI.btn("Copiar", () => UI.copy(agent.system), { ghost: true })]

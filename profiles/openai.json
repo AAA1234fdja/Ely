@@ -5,7 +5,7 @@
   "base_url": "https://api.openai.com/v1",
   "model": "gpt-4o-mini",
   "key_var": "OPENAI_API_KEY",
-  "color": "#10a37f",
+  "color": "#34d399",
   "max_tokens": 1024,
   "notes": "Endpoint Chat Completions estándar. base_url puede ser la raíz (/v1) o la URL completa."
 }
