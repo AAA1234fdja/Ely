@@ -1,0 +1,11 @@
+{
+  "id": "local",
+  "label": "Local / compatible",
+  "provider": "openai",
+  "base_url": "{ELY_LOCAL_BASE_URL}",
+  "model": "{ELY_LOCAL_MODEL}",
+  "key_var": "ELY_LOCAL_API_KEY",
+  "color": "#9aa0b4",
+  "timeout": 120,
+  "notes": "Plantilla para Ollama, LM Studio, vLLM o llama.cpp. Define ELY_LOCAL_BASE_URL (y opcionalmente ELY_LOCAL_MODEL) en .ely/keys.env."
+}

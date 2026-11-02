@@ -1,0 +1,11 @@
+{
+  "id": "anthropic",
+  "label": "Anthropic",
+  "provider": "anthropic",
+  "base_url": "https://api.anthropic.com/v1",
+  "model": "claude-3-5-sonnet-20241022",
+  "key_var": "ANTHROPIC_API_KEY",
+  "color": "#d97757",
+  "max_tokens": 1024,
+  "notes": "Usa x-api-key y anthropic-version. El system prompt se envía separado."
+}

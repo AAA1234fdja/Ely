@@ -1,0 +1,9 @@
+{
+  "id": "together",
+  "label": "Together AI",
+  "provider": "openai",
+  "base_url": "https://api.together.xyz/v1",
+  "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+  "key_var": "TOGETHER_API_KEY",
+  "color": "#0f6fff"
+}

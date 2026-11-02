@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Lanzador de la CLI de Ely Cowork (sin instalación).
+#   ./CLI/ely test        ./CLI/ely serve
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec python3 -c "import sys; sys.path.insert(0, r'$HERE'); from ely_cli.cli import main; raise SystemExit(main())" "$@"

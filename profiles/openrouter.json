@@ -1,0 +1,14 @@
+{
+  "id": "openrouter",
+  "label": "OpenRouter",
+  "provider": "openai",
+  "base_url": "https://openrouter.ai/api/v1",
+  "model": "openai/gpt-4o-mini",
+  "key_var": "OPENROUTER_API_KEY",
+  "color": "#6467f2",
+  "headers": {
+    "HTTP-Referer": "https://github.com/AAA1234fdja/Ely",
+    "X-Title": "Ely Cowork"
+  },
+  "notes": "Un solo endpoint para cientos de modelos. Los headers son obligatorios para el ranking."
+}
