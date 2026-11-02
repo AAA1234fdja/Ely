@@ -58,7 +58,7 @@
       bubble.innerHTML = UI.md(msg.content);
       UI.bindCopy(bubble);
     }
-    if (msg.meta && (msg.meta.tokens || msg.meta.latency_ms)) {
+    if (msg.meta && (msg.meta.tokens || msg.meta.latency_ms) && (!window.Settings || Settings.get("showUsage"))) {
       const meta = UI.el("div", { class: "meta" }, [
         msg.meta.tokens ? UI.el("span", { text: UI.num(msg.meta.tokens) + " tokens" }) : null,
         msg.meta.latency_ms ? UI.el("span", { text: UI.ms(msg.meta.latency_ms) }) : null,
@@ -237,7 +237,8 @@
         rows: 1
       });
       textarea.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" && !event.shiftKey) {
+        const enterSends = !window.Settings || Settings.get("sendOnEnter");
+        if (event.key === "Enter" && !event.shiftKey && enterSends) {
           event.preventDefault();
           send();
         }
@@ -321,13 +322,44 @@
         frame = null;
       };
 
+      const useStream = !window.Settings || Settings.get("stream");
+      if (!useStream) {
+        try {
+          const result = await LLM.complete(text, {
+            agent: currentAgent ? currentAgent.id : "photon",
+            profile: App.profileId(),
+            history
+          });
+          assistantMsg.content = result.text || "";
+          acc = assistantMsg.content;
+          assistantMsg.meta = {
+            profile: result.profile, model: result.model,
+            tokens: result.usage ? result.usage.total_tokens : 0,
+            latency_ms: result.usage ? result.usage.latency_ms : 0,
+            id: result.id
+          };
+        } catch (err) {
+          assistantMsg.error = LLM.explain(err);
+          UI.toast("err", "Error de la API", err.message);
+        }
+        const nodeNoStream = messageNode(assistantMsg, currentAgent);
+        log.replaceChild(nodeNoStream, holder);
+        log.scrollTop = log.scrollHeight;
+        state.messages.push(assistantMsg);
+        state.busy = false;
+        controls.sendBtn.disabled = false;
+        controls.stopBtn.hidden = true;
+        if (acc) await persist();
+        renderSessions();
+        textarea.focus();
+        return;
+      }
+
       try {
-        await API.stream("/chat/stream", {
-          prompt: text,
+        await LLM.stream(text, {
           agent: currentAgent ? currentAgent.id : "photon",
           profile: App.profileId(),
-          history,
-          use_memory: Store.get("memory")
+          history
         }, {
           onStart: (event) => {
             assistantMsg.meta = { profile: event.profile, model: event.model, testKey: event.test_key };

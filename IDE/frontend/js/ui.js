@@ -195,6 +195,7 @@
   UI.toast = function (kind, title, body) {
     let host = document.getElementById("toasts");
     if (!host) {
+      /* El HTML base no trae contenedor de toasts: se crea una sola vez. */
       host = UI.el("div", { id: "toasts" });
       document.body.appendChild(host);
     }
@@ -215,8 +216,12 @@
   let modalKeyHandler = null;
 
   UI.modal = function (opts) {
-    const host = document.getElementById("modal");
-    if (!host) return;
+    let host = document.getElementById("modal");
+    if (!host) {
+      /* Fallback por si la página se sirve sin el contenedor del HTML base. */
+      host = UI.el("div", { id: "modal" });
+      document.body.appendChild(host);
+    }
     UI.clear(host);
     const close = () => {
       host.classList.remove("open");

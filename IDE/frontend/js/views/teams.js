@@ -110,13 +110,12 @@
             for (const agentId of team.members) {
               const agent = App.agents.find((a) => a.id === agentId);
               try {
-                const result = await API.post("/chat", {
-                  prompt: "Objetivo del equipo: " + (team.goal || "resolver la tarea") +
+                const result = await LLM.complete(
+                  "Objetivo del equipo: " + (team.goal || "resolver la tarea") +
                     "\n\nTu papel: " + agent.name + " (" + agent.role + ").\n\n" +
                     "Contexto de la tarea:\n" + text + "\n\nTrabajo del paso anterior:\n" + previous,
-                  agent: agentId,
-                  profile: App.profileId()
-                });
+                  { agent: agentId, profile: App.profileId(), useMemory: false }
+                );
                 task.steps.push({ agent: agentId, name: agent.name, text: result.text, usage: result.usage });
                 previous = result.text;
                 if (panel) paintTask(panel, task);

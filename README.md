@@ -13,6 +13,7 @@ CLI/        código de la CLI y del servidor (Python, sin dependencias)
   tests/    15 pruebas del núcleo (unittest)
   rust/     cliente Rust de la API local (std only, sin crates)
 IDE/        frontend (HTML/CSS/JS sin build, sin frameworks)
+            index.html = el HTML base entregado, sin una sola etiqueta cambiada
 Harness/    backend de rutinas existente — solo lectura, no se modifica
 MCPs/       backend de herramientas existente — solo lectura, no se modifica
 profiles/   11 perfiles (URL + modelo + nombre de la variable de la clave)
@@ -107,7 +108,28 @@ Variables: `ELY_PROFILE` (perfil por defecto), `ELY_DEBUG=1` (traza de errores),
 
 ## IDE (frontend)
 
-17 vistas en `IDE/frontend`, sin build ni dependencias de CDN:
+`IDE/frontend/index.html` es **el HTML base original, byte a byte** (md5
+`272bac542dd9a306b1f5c58f921873ea`). No se le añadió ni se le quitó nada: la app
+se construye sobre las etiquetas que ya declara, y cada `<script>` tiene su
+módulo real:
+
+| módulo | responsabilidad |
+|---|---|
+| `js/store.js` | estado global, persistencia en localStorage |
+| `js/ui.js` | DOM, formato, markdown, modales, toasts |
+| `js/engine.js` | transporte HTTP (`window.API`) + caché de estado (`window.Engine`) |
+| `js/llm.js` | capa de modelo: `complete`, `stream`, `probe`, workflows, skills |
+| `js/settings.js` | ajustes (densidad, streaming, consumo, animaciones) y modal |
+| `js/views/ide.js` | editor del workspace + asistente con contexto del archivo |
+| `js/views/*.js` | dashboard, workflows, agents, canvas, teams, assets, skills, tools, integrations, jobs, pairing, config, costs, memory |
+| `js/chat.js` | chat con streaming SSE y sesiones |
+| `js/app.js` | router, cabecera y arranque |
+
+El HTML solo trae `<div id="modal">`; el contenedor de toasts (`#toasts`) lo crea
+`ui.js` en tiempo de ejecución, sin tocar el documento original.
+
+
+16 vistas sobre ese HTML, sin build ni dependencias de CDN:
 
 - **Chat** — streaming SSE real, selección de agente/perfil, sesiones guardadas.
 - **Panel** — estado del sistema, tokens, coste y actividad reciente.

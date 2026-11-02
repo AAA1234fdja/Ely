@@ -123,7 +123,8 @@
           class: "muted", style: { marginLeft: "4px", cursor: "pointer" }, text: "×",
           onclick: (event) => {
             event.stopPropagation();
-            if (state.dirty[path] && !confirm("Hay cambios sin guardar en " + path + ". ¿Cerrar igualmente?")) return;
+            const askClose = !window.Settings || Settings.get("confirmClose");
+            if (state.dirty[path] && askClose && !confirm("Hay cambios sin guardar en " + path + ". ¿Cerrar igualmente?")) return;
             state.tabs = state.tabs.filter((p) => p !== path);
             delete state.dirty[path];
             Store.set({ ideTabs: state.tabs });
@@ -171,7 +172,8 @@
     async function openFile(path, force) {
       if (!path) return;
       if (state.dirty[state.active] && state.active !== path && !force) {
-        if (!confirm("Cambios sin guardar en " + state.active + ". ¿Descartar?")) return;
+        const askOpen = !window.Settings || Settings.get("confirmClose");
+        if (askOpen && !confirm("Cambios sin guardar en " + state.active + ". ¿Descartar?")) return;
         delete state.dirty[state.active];
       }
       state.active = path;
@@ -301,11 +303,11 @@
       holder.bubble.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
       let acc = "";
       try {
-        const result = await API.post("/chat", {
-          prompt: prompt,
+        const result = await LLM.complete(prompt, {
           agent: App.agentId(),
           profile: App.profileId(),
-          context: "Archivo " + state.active + ":\n\n```\n" + area.value.slice(0, 12000) + "\n```"
+          context: "Archivo " + state.active + ":\n\n```\n" + area.value.slice(0, 12000) + "\n```",
+          useMemory: false
         });
         acc = result.text || "(respuesta vacía)";
         holder.bubble.innerHTML = UI.md(acc);

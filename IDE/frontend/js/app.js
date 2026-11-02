@@ -93,27 +93,13 @@
     },
 
     async refresh() {
-      const results = await Promise.allSettled([
-        API.health(), API.profiles(), API.agents(), API.mcp()
-      ]);
-      const [health, profiles, agents, mcp] = results;
-      if (health.status === "fulfilled") this.health = health.value;
-      if (profiles.status === "fulfilled") {
-        this.profiles = profiles.value.profiles || [];
-        Store.cache.profiles = this.profiles;
-      }
-      if (agents.status === "fulfilled") {
-        this.agents = agents.value.agents || [];
-        Store.cache.agents = this.agents;
-      }
-      if (mcp.status === "fulfilled") {
-        this.mcp = mcp.value;
-        Store.cache.mcp = mcp.value;
-      }
-      this.connected = health.status === "fulfilled";
-      if (!this.connected) {
-        this.fatal(health.reason);
-      }
+      const state = await Engine.load(true);
+      this.health = Engine.health;
+      this.profiles = Engine.profiles;
+      this.agents = Engine.agents;
+      this.mcp = Engine.mcp;
+      this.connected = state.connected;
+      if (!this.connected) this.fatal(state.error);
       this.renderHeader();
       if (this.connected) this.render();
     },
@@ -200,6 +186,9 @@
       header.appendChild(keyBadge);
       header.appendChild(pill);
       header.appendChild(testBtn);
+      header.appendChild(UI.btn("⚙", () => Settings.openModal(this), {
+        small: true, ghost: true, title: "Ajustes"
+      }));
       header.appendChild(UI.btn("Abrir chat", () => this.navigate("chat"), { small: true, primary: true, icon: "❯" }));
     },
 
@@ -252,8 +241,9 @@
     },
 
     async boot() {
+      Settings.apply();
       try {
-        const data = await API.get("/routes");
+        const data = await API.routes();
         if (data && Array.isArray(data.nav) && data.nav.length) {
           NAV = data.nav;
           TITLES = {};
@@ -277,6 +267,13 @@
         document.body.classList.remove("nav-open");
         this.render();
       });
+      document.addEventListener("keydown", (event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key === ",") {
+          event.preventDefault();
+          Settings.openModal(this);
+        }
+      });
+
       await this.refresh();
       API.memory().then((data) => {
         this.memoryCount = (data.memories || []).length;
