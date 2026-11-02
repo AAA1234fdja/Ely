@@ -161,8 +161,8 @@ módulo real:
 | `js/engine.js` | transporte HTTP (`window.API`) + caché de estado (`window.Engine`) |
 | `js/llm.js` | capa de modelo: `complete`, `stream`, `probe`, workflows, skills |
 | `js/settings.js` | ajustes (densidad, streaming, consumo, animaciones) y modal |
-| `js/views/ide.js` | editor del workspace + asistente con contexto del archivo |
-| `js/views/*.js` | dashboard, workflows, agents, canvas, teams, assets, skillslib, skills, tools, integrations, jobs, pairing, config, costs, memory |
+| `js/views/ide.js` | editor del workspace o de un repo importado + asistente con contexto |
+| `js/views/*.js` | dashboard, workflows, agents, canvas, teams, assets, skillslib, skills, tools, integrations, jobs, pairing, config, costs, memory, repos |
 | `js/chat.js` | chat con streaming SSE y sesiones |
 | `js/app.js` | router, cabecera y arranque |
 
@@ -170,12 +170,13 @@ El HTML solo trae `<div id="modal">`; el contenedor de toasts (`#toasts`) lo cre
 `ui.js` en tiempo de ejecución, sin tocar el documento original.
 
 
-17 vistas sobre ese HTML, sin build ni dependencias de CDN:
+18 vistas sobre ese HTML, sin build ni dependencias de CDN:
 
 - **Chat** — streaming SSE real, selección de agente/perfil, sesiones guardadas.
 - **Panel** — estado del sistema, tokens, coste y actividad reciente.
-- **IDE** — editor del workspace (árbol real, guardar, atajos) con asistente que
-  recibe el archivo abierto como contexto.
+- **IDE** — editor del workspace (árbol real, guardar, atajos) o de un repositorio
+  importado (solo lectura), con asistente que recibe el archivo abierto como contexto.
+- **Repositorios** — importación real de repos de GitHub y búsqueda de texto en ellos.
 - **Canvas** — grafo de agentes y workflows (SVG) con inspector.
 - **Workflows / Agentes / Equipos / Skills** — orquestación real contra el proveedor.
 - **Herramientas** — catálogo y estado verdadero de `MCPs/`.
@@ -187,6 +188,41 @@ El HTML solo trae `<div id="modal">`; el contenedor de toasts (`#toasts`) lo cre
 
 El navegador **nunca** ve la API Key: llama a `/api/*` en el mismo origen y es el
 servidor Python quien firma la petición al proveedor.
+
+## Repositorios (contenido real)
+
+El IDE puede trabajar sobre un repositorio real descargado de GitHub, no sobre
+carpetas de ejemplo. La importación baja el **tarball** del commit (`main`, una
+etiqueta o un SHA) a `.ely/repos/<slug>/` y lo deja navegable en el editor:
+
+```bash
+./CLI/ely repo add microsoft/vscode        # rama por defecto
+./CLI/ely repo add microsoft/vscode-docs    # otra referencia
+./CLI/ely repo list                         # slug, archivos, tamaño, fecha
+./CLI/ely repo tree microsoft__vscode --depth 1
+./CLI/ely repo search microsoft__vscode "createModel"
+./CLI/ely repo serve microsoft__vscode --port 8790   # IDE sobre el repo
+./CLI/ely repo remove microsoft__vscode
+```
+
+Origen del contenido, sin atajos: `https://codeload.github.com/<owner>/<repo>/tar.gz/<ref>`
+con respaldo en `https://api.github.com/repos/<owner>/<repo>/tarball/<ref>`.
+La extracción rechaza rutas absolutas, `..` y enlaces simbólicos, y omite
+`node_modules`, `dist`, `out`, `.git` y demás artefactos de build.
+
+Límites (ampliables por entorno):
+
+| variable | por defecto | qué controla |
+|---|---|---|
+| `ELY_REPO_MAX_DOWNLOAD` | 600 MB | tamaño máximo del tarball |
+| `ELY_REPO_MAX_BYTES` | 1.2 GB | total extraído |
+| `ELY_REPO_MAX_FILES` | 60000 | número de archivos |
+| `GITHUB_TOKEN` | — | usa la API autenticada (más cuota) |
+
+En la UI: la vista **Repositories** (barra de importación, presets, progreso y
+tarjetas con archivos/tamaño real) y el selector **Origen** del IDE, que alterna
+`Workspace` / `Repo`; los archivos del repo se abren en **solo lectura** y el
+asistente recibe su contenido como contexto.
 
 ## API
 
@@ -203,6 +239,8 @@ POST /skills/run              GET  /tools              GET  /mcp
 GET  /stats                   GET  /calls              GET  /jobs
 GET  /pairing                 POST /pairing/rotate     GET  /costs
 GET  /workspace/tree          GET  /workspace/file     POST /workspace/file
+GET  /repos                   POST /repos              DELETE /repos/:slug
+GET  /repos/tree              GET  /repos/file         GET  /repos/search
 GET  /assets                  GET  /config
 ```
 

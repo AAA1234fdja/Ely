@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import __version__, llm, mcp
+from . import __version__, llm, mcp, repos
 from .agents import AGENTS, get_agent, workflows
 from .config import ConfigError, load_profiles, repo_root, resolve_key
 from .engine import Engine
@@ -415,6 +415,145 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_repo(args: argparse.Namespace) -> int:
+    """Descarga un repositorio Git real para abrirlo en el IDE."""
+    if args.action == "list":
+        items = repos.list_repos(Engine().root)
+        if args.json:
+            print(json.dumps(items, indent=2, ensure_ascii=False))
+            return 0
+        if not items:
+            print(dim("  (no hay repositorios importados — usa `ely repo add microsoft/vscode`)"))
+            return 0
+        print(bold(f"\n  {len(items)} repositorio(s) en .ely/repos\n"))
+        for item in items:
+            print(f"  {cyan(item['slug']):<40} {item['files']:>6} archivos  "
+                  f"{dim(UI_bytes(item['bytes'])):>10}  {dim(item['label'])}")
+        print()
+        print(dim("  Abre cualquiera con: ely repo serve <slug> --port 8790"))
+        print(dim("  …y en el IDE cambia «Workspace» a «Repo: <slug>» con la URL http://localhost:8790"))
+        print()
+        return 0
+
+    if args.action == "add":
+        if not args.reference:
+            return fail("Falta la referencia: ely repo add microsoft/vscode")
+        last = [0]
+
+        def progress(done: int, total: int) -> None:
+            step = 5 * 1024 * 1024
+            if done - last[0] < step and (not total or done < total):
+                return
+            last[0] = done
+            pct = f" ({done * 100 // total}%)" if total else ""
+            sys.stderr.write(f"\r  descargando {UI_bytes(done)}{pct}" + " " * 12)
+            sys.stderr.flush()
+
+        print(bold(f"\n  Importando {args.reference}\n"))
+        try:
+            meta = repos.add(Engine().root, args.reference, progress=progress)
+        except repos.RepoError as exc:
+            sys.stderr.write("\r" + " " * 60 + "\r")
+            print(bad(str(exc)))
+            if exc.detail:
+                print(dim(f"  detalle: {str(exc.detail)[:300]}"))
+            if exc.status == 413:
+                print(dim("  Sube el límite con ELY_REPO_MAX_DOWNLOAD / ELY_REPO_MAX_FILES / ELY_REPO_MAX_BYTES."))
+            return 1
+        sys.stderr.write("\r" + " " * 60 + "\r")
+        print(ok(f"{meta['label']} → {meta['slug']}"))
+        print(f"  archivos : {meta['files']}")
+        print(f"  tamaño   : {UI_bytes(meta['bytes'])} (descargado {UI_bytes(meta['downloaded_bytes'])})")
+        print(f"  url      : {dim(meta['url'])}")
+        print()
+        print(dim(f"  Ábrelo en el IDE con: ely repo serve {meta['slug']} --port 8790"))
+        print()
+        return 0
+
+    if args.action == "remove":
+        slug = args.reference or args.slug
+        if not slug:
+            return fail("Indica el slug: ely repo remove microsoft__vscode")
+        try:
+            result = repos.remove(Engine().root, slug)
+        except repos.RepoError as exc:
+            return fail(str(exc))
+        return ok_logged(f"eliminado {slug} ({UI_bytes(result['freed_bytes'])} liberados)")
+
+    if args.action == "tree":
+        slug = args.reference or args.slug
+        if not slug:
+            return fail("Indica el slug")
+        try:
+            data = repos.tree(Engine().root, slug, depth=args.depth)
+        except repos.RepoError as exc:
+            return fail(str(exc))
+        for entry in data["entries"][: args.limit]:
+            depth = entry["path"].count("/")
+            icon = "▸" if entry["type"] == "dir" else " "
+            print("  " + "  " * depth + f"{icon} {entry['path'].split('/')[-1]}"
+                  + ("" if entry["type"] == "dir" else dim(f"  {UI_bytes(entry['size'])}")))
+        if data["truncated"]:
+            print(dim("  … (árbol truncado)"))
+        return 0
+
+    if args.action == "search":
+        slug, query = args.reference, args.slug
+        if not slug or not query:
+            return fail("Uso: ely repo search <slug> <texto>")
+        try:
+            data = repos.search(Engine().root, slug, query)
+        except repos.RepoError as exc:
+            return fail(str(exc))
+        print(bold(f"\n  {len(data['hits'])} coincidencias de «{data['query']}» "
+                   f"en {data['scanned_files']} archivos\n"))
+        for hit in data["hits"]:
+            print(f"  {cyan(hit['path'] + ':' + str(hit['line']))}")
+            print(dim(f"    {hit['text']}"))
+        print()
+        return 0
+
+    if args.action == "serve":
+        import shutil
+        import subprocess
+
+        slug = args.reference or args.slug
+        if not slug:
+            return fail("Indica el slug del repositorio")
+        try:
+            base, meta = repos.get_repo(Engine().root, slug)
+        except repos.RepoError as exc:
+            return fail(str(exc))
+        node = shutil.which("node")
+        if not node:
+            return fail("Node.js no está instalado (https://nodejs.org)")
+        script = Path(__file__).resolve().parents[1] / "bin" / "ely.js"
+        cmd = [node, str(script), "ide", str(base), "--port", str(args.port)]
+        print(dim("  " + " ".join(cmd)))
+        print(bold(f"  {meta['label']} — {meta['files']} archivos"))
+        print(f"  Abre http://localhost:{args.port} y en el IDE elige «Repo: {slug}»")
+        try:
+            return subprocess.call(cmd)
+        except KeyboardInterrupt:
+            return 0
+
+    return fail(f"Acción desconocida: {args.action}")
+
+
+def UI_bytes(value: Any) -> str:
+    size = float(value or 0)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} B"
+        size /= 1024
+    return f"{size:.1f} GB"
+
+
+def ok_logged(message: str) -> int:
+    print(ok(message))
+    return 0
+
+
 def cmd_routes(args: argparse.Namespace) -> int:
     from . import routes
 
@@ -534,6 +673,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("doctor", help="diagnóstico del entorno")
     p.set_defaults(func=cmd_doctor)
+
+    p = sub.add_parser("repo", help="repositorios Git para abrir en el IDE")
+    p.add_argument("action", choices=("add", "list", "remove", "tree", "search", "serve"),
+                   help="add | list | remove | tree | search | serve")
+    p.add_argument("reference", nargs="?", help="owner/repo, URL o URL de /tree/<ref>")
+    p.add_argument("slug", nargs="?", help="slug del repositorio importado")
+    p.add_argument("query", nargs="?", help="texto a buscar")
+    p.add_argument("--port", type=int, default=8790)
+    p.add_argument("--depth", type=int, default=3)
+    p.add_argument("--limit", type=int, default=400)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_repo)
 
     p = sub.add_parser("routes", help="vistas del IDE declaradas por el backend")
     p.add_argument("--json", action="store_true")

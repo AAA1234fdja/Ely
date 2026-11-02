@@ -12,6 +12,10 @@
 
   window.Views.ide = function (view, App) {
     const state = {
+      source: localStorage.getItem("ely.ideSource") === "repo" ? "repo" : "workspace",
+      repo: localStorage.getItem("ely.ideRepo") || null,
+      repos: [],
+      repoTree: null,
       tree: null,
       tabs: (Store.get("ideTabs") || []).slice(0, 8),
       active: Store.get("ideFile") || "README.md",
@@ -33,31 +37,125 @@
     root.appendChild(chatCol);
 
     /* ---------------------------------------------------------------- archivos */
-    const fileHead = UI.el("div", { class: "head" }, [
-      UI.el("span", { text: "workspace" }),
+    const sourceSelect = UI.el("select", {
+      style: { height: "22px", minHeight: "22px", fontSize: "10px", padding: "0 4px", maxWidth: "128px" },
+      title: "Origen de los archivos",
+      onchange: (event) => {
+        state.source = event.target.value;
+        localStorage.setItem("ely.ideSource", state.source);
+        renderTree();
+      }
+    }, [
+      UI.el("option", { value: "workspace", selected: state.source === "workspace", text: "Workspace" }),
+      UI.el("option", { value: "repo", selected: state.source === "repo", text: "Repo" })
+    ]);
+
+    const repoSelect = UI.el("select", {
+      style: { height: "22px", minHeight: "22px", fontSize: "10px", padding: "0 4px", maxWidth: "128px" },
+      title: "Repositorio importado",
+      onchange: (event) => {
+        state.repo = event.target.value || null;
+        state.repoTree = null;
+        localStorage.setItem("ely.ideRepo", state.repo || "");
+        state.tabs = [];
+        state.docs = {};
+        state.active = null;
+        renderTabs();
+        renderActions();
+        renderTree();
+        loadRepoTree();
+      }
+    });
+
+    const fileHead = UI.el("div", { class: "head", style: { flexWrap: "wrap", gap: "4px" } }, [
+      sourceSelect,
+      repoSelect,
       UI.el("button", {
         class: "btn ghost sm", style: { marginLeft: "auto", padding: "0 6px" },
         html: "⟳", title: "Recargar árbol",
-        onclick: () => loadTree()
+        onclick: () => { if (state.source === "repo") loadRepoTree(); else loadTree(); }
       })
     ]);
     const fileList = UI.el("div", { class: "list" });
     filesCol.appendChild(fileHead);
     filesCol.appendChild(fileList);
 
+    function renderRepoOptions() {
+      UI.clear(repoSelect);
+      if (!state.repos.length) {
+        repoSelect.appendChild(UI.el("option", { value: "", text: "sin repos" }));
+        repoSelect.disabled = true;
+        return;
+      }
+      repoSelect.disabled = false;
+      if (!state.repo || !state.repos.some((r) => r.slug === state.repo)) {
+        state.repo = state.repos[0].slug;
+        localStorage.setItem("ely.ideRepo", state.repo);
+      }
+      state.repos.forEach((repo) => {
+        repoSelect.appendChild(UI.el("option", {
+          value: repo.slug, selected: repo.slug === state.repo,
+          text: repo.label
+        }));
+      });
+    }
+
+    async function loadRepos() {
+      try {
+        const data = await API.repos();
+        state.repos = data.repos || [];
+        renderRepoOptions();
+        if (state.source === "repo") loadRepoTree();
+      } catch (err) {
+        state.repos = [];
+        renderRepoOptions();
+      }
+    }
+
+    async function loadRepoTree() {
+      if (!state.repo) {
+        state.repoTree = { entries: [] };
+        renderTree();
+        return;
+      }
+      try {
+        const data = await API.repoTree(state.repo, 3);
+        state.repoTree = data;
+        renderTree();
+      } catch (err) {
+        UI.clear(fileList);
+        fileList.appendChild(UI.errBox(err, loadRepoTree));
+      }
+    }
+
     function renderTree() {
       UI.clear(fileList);
-      if (!state.tree) {
+      const tree = state.source === "repo" ? state.repoTree : state.tree;
+      if (state.source === "repo" && !state.repos.length) {
+        fileList.appendChild(UI.el("div", { class: "empty", style: { padding: "18px 10px" } }, [
+          UI.el("div", { class: "big", text: "◫" }),
+          UI.el("div", { text: "Sin repositorios importados" }),
+          UI.btn("Importar uno", () => App.navigate("repos"), { small: true, primary: true })
+        ]));
+        return;
+      }
+      if (!tree) {
         fileList.appendChild(UI.loading("Leyendo…"));
         return;
       }
-      const entries = state.tree.entries || [];
-      const openDirs = new Set(["CLI", "IDE", "IDE/frontend", "IDE/frontend/js", "IDE/frontend/js/views", "profiles", "MCPs", "Harness"]);
+      const entries = tree.entries || [];
+
+      /* Directorios desplegados por defecto según el origen. */
+      const openDirs = state.source === "repo"
+        ? new Set(["src", "src/vs", "src/vs/editor", "src/vs/workbench", "extensions", "cli"])
+        : new Set(["CLI", "IDE", "IDE/frontend", "IDE/frontend/js", "IDE/frontend/js/views",
+                   "profiles", "Harness", "MCPs"]);
+
       entries.forEach((entry) => {
         const depth = entry.path.split("/").length - 1;
         const parent = entry.path.split("/").slice(0, -1).join("/");
         if (depth > 0 && !openDirs.has(parent)) return;
-        if (entry.type === "dir" && depth > 2) return;
+        if (entry.type === "dir" && depth > (state.source === "repo" ? 2 : 2)) return;
         if (entry.type === "dir") {
           const node = UI.el("div", { class: "file-item" }, [
             UI.el("span", { style: { opacity: 0.6 }, text: "▸" }),
@@ -169,7 +267,10 @@
         status.appendChild(UI.el("span", { text: UI.bytes(doc.size) }));
       }
       status.appendChild(UI.el("span", { text: state.dirty[state.active] ? "sin guardar" : "guardado" }));
-      status.appendChild(UI.el("span", { style: { marginLeft: "auto" }, text: "workspace real · " + (state.tree ? state.tree.counts.files : 0) + " archivos" }));
+      const scopeLabel = state.source === "repo"
+        ? (state.repo || "repositorio") + " · " + (state.tree ? state.tree.counts.files : 0) + " archivos"
+        : "workspace real · " + (state.tree ? state.tree.counts.files : 0) + " archivos";
+      status.appendChild(UI.el("span", { style: { marginLeft: "auto" }, text: scopeLabel }));
     }
 
     async function openFile(path, force) {
@@ -193,7 +294,9 @@
       }
       area.value = "…";
       try {
-        const doc = await API.file(path);
+        const doc = state.source === "repo"
+          ? await API.repoFile(state.repo, path)
+          : await API.file(path);
         state.docs[path] = doc;
         if (state.active === path) {
           area.value = doc.content;
@@ -216,6 +319,11 @@
 
     async function save() {
       if (!state.active) return;
+      if (state.source === "repo") {
+        UI.toast("warn", "Repositorio de solo lectura",
+          "Los repositorios importados se guardan en .ely/repos como referencia; edita el workspace local.");
+        return;
+      }
       UI.clear(status).appendChild(UI.el("span", { text: "guardando…" }));
       try {
         const result = await API.saveFile(state.active, area.value);
@@ -330,11 +438,24 @@
     renderTabs();
     renderActions();
     renderTree();
-    loadTree();
     updateGutter();
     updateStatus();
-
-    if (state.active) openFile(state.active);
+    loadTree();
+    loadRepos().then(() => {
+      /* archivo solicitado desde la vista de repositorios o búsqueda */
+      const pending = localStorage.getItem("ely.ideOpenPath");
+      if (pending) {
+        localStorage.removeItem("ely.ideOpenPath");
+        state.source = "repo";
+        localStorage.setItem("ely.ideSource", "repo");
+        sourceSelect.value = "repo";
+        renderTree();
+        openFile(pending.replace(/^\//, ""));
+        return;
+      }
+      if (state.source === "repo" && state.repo) loadRepoTree();
+      else if (state.active) openFile(state.active);
+    });
 
     document.addEventListener("keydown", function shortcuts(event) {
       if (App.route !== "ide") return;

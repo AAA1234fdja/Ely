@@ -18,7 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 
-from . import __version__, llm, mcp, routes, workspace
+from . import __version__, llm, mcp, repos, routes, workspace
 from .agents import AGENTS, AGENTS_BY_ID, get_agent, tools, workflows
 from .config import (
     ConfigError,
@@ -345,6 +345,52 @@ class ElyHandler(BaseHTTPRequestHandler):
 
         if method == "GET" and route == "/assets":
             return self.json(workspace.assets(engine.root))
+
+        # ------------------------------------------------ repositorios
+        if method == "GET" and route == "/repos":
+            return self.json({"repos": repos.list_repos(engine.root), "presets": repos.presets()})
+
+        if method == "POST" and route == "/repos":
+            body = self.read_json()
+            reference = str(body.get("reference") or "")
+            try:
+                meta = repos.add(engine.root, reference)
+            except repos.RepoError as exc:
+                raise ApiError(exc.status, str(exc), exc.detail) from exc
+            return self.json(meta)
+
+        if method == "GET" and route == "/repos/tree":
+            q = self.query()
+            try:
+                return self.json(repos.tree(engine.root, q.get("slug", ""), int(q.get("depth") or 3)))
+            except repos.RepoError as exc:
+                raise ApiError(exc.status, str(exc)) from exc
+
+        if method == "GET" and route == "/repos/file":
+            q = self.query()
+            try:
+                return self.json(repos.read_file(engine.root, q.get("slug", ""), q.get("path", "")))
+            except repos.RepoError as exc:
+                raise ApiError(exc.status, str(exc)) from exc
+
+        if method == "GET" and route == "/repos/search":
+            q = self.query()
+            try:
+                return self.json(repos.search(
+                    engine.root, q.get("slug", ""), q.get("q", ""),
+                    limit=int(q.get("limit") or 60),
+                ))
+            except repos.RepoError as exc:
+                raise ApiError(exc.status, str(exc)) from exc
+
+        if method == "DELETE" and parts[:3] == ["api", "repos", "remove"] or (
+            method == "DELETE" and len(parts) == 3 and parts[:2] == ["api", "repos"]
+        ):
+            slug = parts[-1]
+            try:
+                return self.json(repos.remove(engine.root, slug))
+            except repos.RepoError as exc:
+                raise ApiError(exc.status, str(exc)) from exc
 
         # ------------------------------------------------ skills
         if method == "GET" and route == "/skills":

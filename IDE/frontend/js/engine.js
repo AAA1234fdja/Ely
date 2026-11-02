@@ -165,7 +165,15 @@
     pairing: () => request("/pairing"),
     rotatePairing: () => request("/pairing/rotate", { method: "POST", body: {} }),
     costs: () => request("/costs"),
-    config: () => request("/config")
+    config: () => request("/config"),
+
+    /* --- repositorios --- */
+    repos: () => request("/repos"),
+    addRepo: (reference) => request("/repos", { method: "POST", body: { reference } }),
+    repoTree: (slug, depth) => request("/repos/tree?slug=" + encodeURIComponent(slug) + "&depth=" + (depth || 3)),
+    repoFile: (slug, path) => request("/repos/file?slug=" + encodeURIComponent(slug) + "&path=" + encodeURIComponent(path)),
+    searchRepo: (slug, q) => request("/repos/search?slug=" + encodeURIComponent(slug) + "&q=" + encodeURIComponent(q)),
+    removeRepo: (slug) => request("/repos/" + encodeURIComponent(slug), { method: "DELETE" })
   };
 
   /* ======================================================================
