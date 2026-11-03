@@ -445,6 +445,31 @@ class LocalStorageTest(unittest.TestCase):
         bad = self.engine.run_command("cd ..")
         self.assertEqual(bad["code"], 1)
 
+    def test_ide_fs_ops(self):
+        c = lambda op, a=None: self.engine.ide_call(op, a or {})
+        c("fs_mkdir", {"path": "p"})
+        c("fs_create", {"path": "p/a.py", "content": "def f():\n    return 1\n"})
+        self.assertEqual([e["name"] for e in c("fs_list", {"path": "p"})["entries"]], ["a.py"])
+        c("fs_rename", {"path": "p/a.py", "new": "p/b.py"})
+        c("fs_copy", {"src": "p/b.py", "dst": "p/c.py"})
+        self.assertTrue((self.tmp / "p" / "c.py").exists())
+        self.assertEqual(c("symbols", {"path": "p/b.py"})["symbols"][0]["name"], "f")
+        c("fs_delete", {"path": "p/c.py"})
+        self.assertFalse((self.tmp / "p" / "c.py").exists())
+
+    def test_ide_search_replace_history(self):
+        c = lambda op, a=None: self.engine.ide_call(op, a or {})
+        c("fs_create", {"path": "x.py", "content": "hola mundo\n"})
+        self.assertEqual(len(c("search", {"q": "hola"})["matches"]), 1)
+        prev = c("replace", {"q": "hola", "repl": "adios", "preview": True})
+        self.assertEqual(prev["changed"][0]["count"], 1)
+        self.assertIn("hola", (self.tmp / "x.py").read_text())  # preview no escribe
+        c("replace", {"q": "hola", "repl": "adios"})
+        self.assertIn("adios", (self.tmp / "x.py").read_text())
+        c("history_save", {"path": "x.py", "content": "v1"})
+        self.assertEqual(len(c("history_list", {"path": "x.py"})["history"]), 1)
+        self.assertIn("+", c("diff", {"a": "a\n", "b": "b\n"})["diff"])
+
     def test_workspace_search(self):
         from ely_cli.workspace import WorkspaceError
         (self.tmp / "src").mkdir()

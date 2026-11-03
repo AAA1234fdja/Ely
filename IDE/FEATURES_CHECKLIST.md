@@ -1,0 +1,522 @@
+# Ely IDE · Checklist de verificación (500 funciones de los MD)
+
+> Leyenda: ✅ Frontend · 🔌 Backend (`/api/ide/call`) · ✅+🔌 ambos ·  Parcial ·  Pendiente / no feasible en web (LSP, debugger o extensión).
+
+- 🟡 **001.** Mostrar barra de título y controles de ventana
+- ✅ **002.** Mostrar barra de actividad lateral
+- ✅ **003.** Mostrar barra lateral principal
+- ✅ **004.** Mostrar panel inferior
+- ✅ **005.** Mostrar barra de estado
+- ✅ **006.** Mostrar u ocultar cada región de la interfaz
+- ⛔ **007.** Redimensionar paneles mediante divisores
+- ⛔ **008.** Mover vistas entre contenedores
+- ⛔ **009.** Cambiar la posición de la barra lateral
+- ⛔ **010.** Cambiar la posición del panel inferior
+- ⛔ **011.** Dividir el editor en grupos
+- ⛔ **012.** Crear grupos de editores en cuadrícula
+- ⛔ **013.** Cambiar entre grupos de editores
+- ⛔ **014.** Mover pestañas entre grupos
+- ⛔ **015.** Sincronizar el desplazamiento entre editores
+- ⛔ **016.** Alternar pantalla completa
+- ⛔ **017.** Activar modo Zen
+- ⛔ **018.** Activar modo de enfoque del editor
+- 🟡 **019.** Restaurar disposición predeterminada
+- ⛔ **020.** Guardar y restaurar distribuciones personalizadas
+- ✅ **021.** Abrir una carpeta como espacio de trabajo
+- ✅ **022.** Mostrar árbol de archivos y carpetas
+- ✅ **023.** Expandir y contraer directorios
+- ✅+🔌 **024.** Crear archivo nuevo
+- ✅+🔌 **025.** Crear carpeta nueva
+- ✅+🔌 **026.** Renombrar archivos y carpetas
+- ✅+🔌 **027.** Eliminar archivos y carpetas
+- ✅+🔌 **028.** Copiar y pegar archivos
+- ✅+🔌 **029.** Cortar y mover archivos
+- ⛔ **030.** Arrastrar y soltar archivos
+- ✅ **031.** Abrir archivos con un clic
+- ⛔ **032.** Abrir archivos con doble clic para fijar pestaña
+- ✅+🔌 **033.** Mostrar archivos ocultos
+- ✅+🔌 **034.** Ordenar por nombre
+- ✅+🔌 **035.** Ordenar por tipo
+- 🔌 **036.** Ordenar por fecha de modificación
+- ✅+🔌 **037.** Ordenar por tamaño
+- ⛔ **038.** Filtrar elementos del explorador
+- 🔌 **039.** Excluir archivos mediante patrones glob
+- 🟡 **040.** Actualizar el árbol cuando cambie el sistema de
+- ✅ **041.** Abrir archivos en pestañas
+- ✅ **042.** Cerrar pestaña actual
+- ⛔ **043.** Cerrar todas las pestañas
+- ⛔ **044.** Cerrar pestañas a la derecha
+- ⛔ **045.** Cerrar pestañas guardadas
+- ✅ **046.** Mostrar indicador de cambios sin guardar
+- ⛔ **047.** Fijar pestañas
+- ✅ **048.** Cambiar entre pestañas recientes
+- ⛔ **049.** Reabrir editor cerrado
+- ⛔ **050.** Mostrar vista previa de pestaña
+- ⛔ **051.** Convertir vista previa en pestaña fija
+- ⛔ **052.** Dividir editor a la derecha
+- ⛔ **053.** Dividir editor hacia abajo
+- ⛔ **054.** Duplicar editor en otro grupo
+- ⛔ **055.** Mover editor al grupo siguiente
+- ⛔ **056.** Mover editor al grupo anterior
+- ✅ **057.** Mostrar lista de editores abiertos
+- 🟡 **058.** Comparar dos archivos lado a lado
+- ⛔ **059.** Bloquear un grupo de editores
+- ⛔ **060.** Restaurar editores al reabrir el proyecto
+- ✅ **061.** Resaltado de sintaxis
+- ✅ **062.** Numeración de líneas
+- ⛔ **063.** Numeración relativa de líneas
+- ✅ **064.** Ajuste automático de línea
+- 🟡 **065.** Indentación configurable
+- ⛔ **066.** Detección de indentación del archivo
+- ✅ **067.** Insertar espacios o tabulaciones
+- ⛔ **068.** Guías de indentación
+- ⛔ **069.** Resaltar línea actual
+- ⛔ **070.** Resaltar pares de corchetes
+- ⛔ **071.** Guías de pares de corchetes
+- ⛔ **072.** Autocierre de paréntesis y comillas
+- ⛔ **073.** Autoformación de pares al escribir
+- ⛔ **074.** Sangría automática al pegar
+- ✅ **075.** Transformar selección a mayúsculas
+- ✅ **076.** Transformar selección a minúsculas
+- ✅ **077.** Ordenar líneas seleccionadas
+- ✅ **078.** Unir líneas seleccionadas
+- ✅ **079.** Eliminar espacios finales
+- ✅ **080.** Insertar salto de línea final automáticamente
+- ✅ **081.** Selección con ratón
+- ✅ **082.** Selección por teclado
+- ⛔ **083.** Selección por columna
+- ⛔ **084.** Añadir cursor encima
+- ⛔ **085.** Añadir cursor debajo
+- ⛔ **086.** Añadir cursor en cada coincidencia
+- ⛔ **087.** Seleccionar siguiente coincidencia
+- ⛔ **088.** Seleccionar todas las coincidencias
+- ⛔ **089.** Expandir selección
+- ⛔ **090.** Reducir selección
+- ✅ **091.** Mover línea hacia arriba
+- ✅ **092.** Mover línea hacia abajo
+- ✅ **093.** Duplicar línea
+- ✅ **094.** Duplicar selección
+- ✅ **095.** Eliminar línea completa
+- ⛔ **096.** Cortar línea sin selección
+- ✅ **097.** Comentar línea
+- ⛔ **098.** Comentar bloque
+- ✅ **099.** Indentar selección
+- ✅ **100.** Desindentar selección
+- ✅ **101.** Buscar en archivo actual
+- ✅ **102.** Reemplazar en archivo actual
+- ✅ **103.** Buscar con distinción entre mayúsculas
+- ✅ **104.** Buscar palabras completas
+- ✅ **105.** Buscar mediante expresiones regulares
+- ✅+🔌 **106.** Buscar en todos los archivos
+- ✅+🔌 **107.** Reemplazar en todos los archivos
+- ✅+🔌 **108.** Limitar búsqueda a carpetas
+- ✅+🔌 **109.** Excluir carpetas de búsqueda
+- ✅+🔌 **110.** Buscar por patrones glob
+- ✅ **111.** Mostrar resultados en panel de búsqueda
+- 🟡 **112.** Navegar entre coincidencias
+- ⛔ **113.** Resaltar todas las coincidencias
+- 🔌 **114.** Buscar en archivos ignorando patrones
+- ⛔ **115.** Buscar solo en archivos abiertos
+- ⛔ **116.** Buscar en selección
+- ⛔ **117.** Conservar historial de búsquedas
+- ✅ **118.** Abrir resultado en editor
+- ✅ **119.** Mostrar contexto de cada resultado
+- ✅+🔌 **120.** Vista previa de reemplazos globales
+- ✅ **121.** Ir a línea y columna
+- ⛔ **122.** Ir a definición
+- ⛔ **123.** Ir a declaración
+- ⛔ **124.** Ir a implementación
+- ⛔ **125.** Ir a tipo de definición
+- ⛔ **126.** Buscar todas las referencias
+- ⛔ **127.** Buscar referencias dentro del archivo
+- ⛔ **128.** Ir al siguiente problema
+- ⛔ **129.** Ir al problema anterior
+- ⛔ **130.** Ir al siguiente cambio
+- ⛔ **131.** Ir al cambio anterior
+- 🔌 **132.** Ir a símbolo del archivo
+- 🔌 **133.** Ir a símbolo del espacio de trabajo
+- ✅+🔌 **134.** Mostrar esquema del documento
+- ✅ **135.** Mostrar vista de esquema en explorador
+- ✅ **136.** Navegar hacia atrás
+- ✅ **137.** Navegar hacia adelante
+- ⛔ **138.** Ir a pareja de delimitadores
+- ✅ **139.** Ir a archivo reciente
+- ✅ **140.** Abrir archivo por búsqueda rápida
+- ⛔ **141.** Mostrar sugerencias de autocompletado
+- ⛔ **142.** Aceptar sugerencia completa
+- ⛔ **143.** Aceptar siguiente palabra de sugerencia
+- ⛔ **144.** Mostrar documentación emergente
+- ⛔ **145.** Mostrar tipos de variables
+- ⛔ **146.** Mostrar firmas de funciones
+- ⛔ **147.** Mostrar parámetros durante la escritura
+- ⛔ **148.** Completar importaciones
+- ⛔ **149.** Completar rutas de archivos
+- ⛔ **150.** Mostrar diagnósticos del lenguaje
+- ⛔ **151.** Subrayar errores y advertencias
+- ⛔ **152.** Mostrar acciones rápidas
+- ⛔ **153.** Aplicar correcciones de código
+- ⛔ **154.** Renombrar símbolo semánticamente
+- ⛔ **155.** Extraer variable
+- ⛔ **156.** Extraer método o función
+- ⛔ **157.** Organizar importaciones
+- ⛔ **158.** Eliminar importaciones no utilizadas
+- ⛔ **159.** Integración con Language Server Protocol
+- ⛔ **160.** Configurar proveedor de lenguaje por extensión
+- ⛔ **161.** Formatear documento completo
+- ⛔ **162.** Formatear selección
+- ⛔ **163.** Formatear al guardar
+- ⛔ **164.** Formatear al pegar
+- ⛔ **165.** Seleccionar formateador predeterminado
+- ⛔ **166.** Configurar formato por lenguaje
+- ⛔ **167.** Configurar reglas de formato
+- ⛔ **168.** Mostrar diferencias antes de refactorizar
+- ⛔ **169.** Renombrar símbolos en el proyecto
+- ⛔ **170.** Mover símbolo a otro archivo
+- ⛔ **171.** Extraer función
+- ⛔ **172.** Extraer constante
+- ⛔ **173.** Extraer interfaz o tipo
+- ⛔ **174.** Convertir bloque en función
+- ⛔ **175.** Invertir condición
+- ⛔ **176.** Eliminar código redundante
+- ⛔ **177.** Aplicar correcciones automáticas al guardar
+- ⛔ **178.** Organizar miembros del archivo
+- ⛔ **179.** Ejecutar refactorizaciones ofrecidas por LSP
+- ⛔ **180.** Deshacer una refactorización completa
+- ✅ **181.** Abrir terminal integrada
+- 🟡 **182.** Crear terminal nueva
+- ⛔ **183.** Crear varias terminales
+- ⛔ **184.** Seleccionar perfil de shell
+- ⛔ **185.** Configurar perfiles de terminal
+- ⛔ **186.** Cambiar nombre de terminal
+- ⛔ **187.** Dividir terminal
+- ⛔ **188.** Mover terminal entre paneles
+- 🟡 **189.** Cerrar terminal
+- ⛔ **190.** Reiniciar terminal
+- ✅ **191.** Limpiar terminal
+- ✅ **192.** Copiar y pegar texto
+- ⛔ **193.** Buscar dentro de la terminal
+- ⛔ **194.** Detectar enlaces en la salida
+- ⛔ **195.** Abrir rutas de archivos desde la terminal
+- 🔌 **196.** Ejecutar tareas definidas en configuración
+- 🔌 **197.** Crear tareas de compilación
+- 🔌 **198.** Crear tareas de prueba
+- ⛔ **199.** Ejecutar tareas antes o después de otras
+- ✅+🔌 **200.** Mostrar salida y errores de tareas
+- 🟡 **201.** Iniciar depuración
+- ✅ **202.** Ejecutar sin depurar
+- ⛔ **203.** Pausar ejecución
+- ⛔ **204.** Continuar ejecución
+- ⛔ **205.** Reiniciar depuración
+- ⛔ **206.** Detener depuración
+- ⛔ **207.** Crear punto de interrupción
+- ⛔ **208.** Crear punto de interrupción condicional
+- ⛔ **209.** Crear punto de interrupción por log
+- ⛔ **210.** Desactivar temporalmente puntos de interrupción
+- ⛔ **211.** Avanzar al siguiente paso
+- ⛔ **212.** Entrar en función
+- ⛔ **213.** Salir de función
+- ⛔ **214.** Mostrar pila de llamadas
+- ⛔ **215.** Inspeccionar variables locales
+- ⛔ **216.** Inspeccionar variables globales
+- ⛔ **217.** Añadir expresiones observadas
+- ⛔ **218.** Evaluar expresiones en consola de depuración
+- ⛔ **219.** Depurar múltiples objetivos
+- ⛔ **220.** Configurar perfiles de lanzamiento y depuración
+- 🔌 **221.** Detectar repositorio Git
+- ✅+🔌 **222.** Mostrar archivos modificados
+- ✅+🔌 **223.** Mostrar archivos preparados
+- ✅+🔌 **224.** Preparar cambios de archivo
+- ⛔ **225.** Preparar fragmentos individuales
+- ✅+🔌 **226.** Quitar cambios del área de preparación
+- ✅+🔌 **227.** Descartar cambios
+- ✅+🔌 **228.** Mostrar diff integrado
+- 🔌 **229.** Comparar archivo con versión anterior
+- ✅+🔌 **230.** Crear commit
+- ✅ **231.** Escribir mensaje de commit
+- ✅+🔌 **232.** Consultar historial de commits
+- 🔌 **233.** Consultar historial de archivo
+- 🔌 **234.** Crear rama
+- 🔌 **235.** Cambiar de rama
+- 🔌 **236.** Fusionar ramas
+- ⛔ **237.** Resolver conflictos en editor de merge
+- ⛔ **238.** Mostrar cambios entrantes y salientes
+- 🔌 **239.** Realizar fetch, pull y push
+- 🔌 **240.** Mostrar anotaciones de línea tipo blame
+- ✅+🔌 **241.** Comparar dos archivos
+- ⛔ **242.** Comparar archivo con portapapeles
+- ✅+🔌 **243.** Comparar archivo con versión guardada
+- ✅ **244.** Mostrar diff en línea
+- 🟡 **245.** Mostrar diff lado a lado
+- ✅ **246.** Resaltar líneas añadidas
+- ✅ **247.** Resaltar líneas eliminadas
+- 🟡 **248.** Resaltar líneas modificadas
+- ⛔ **249.** Navegar entre diferencias
+- ⛔ **250.** Aceptar cambio de un lado
+- ⛔ **251.** Revertir cambio de un lado
+- ✅+🔌 **252.** Mostrar historial local de archivo
+- 🟡 **253.** Restaurar versión anterior
+- 🔌 **254.** Guardar puntos de restauración
+- ⛔ **255.** Recuperar archivos tras cierre inesperado
+- ⛔ **256.** Detectar conflicto por edición externa
+- ⛔ **257.** Comparar cambios externos
+- 🔌 **258.** Mostrar contenido anterior al guardar
+- ✅ **259.** Deshacer y rehacer cambios
+- 🟡 **260.** Mantener historial de deshacer por archivo
+- 🔌 **261.** Detectar codificación de archivo
+- ⛔ **262.** Cambiar codificación al abrir
+- ⛔ **263.** Guardar con codificación seleccionada
+- 🔌 **264.** Cambiar finales de línea LF o CRLF
+- ✅ **265.** Detectar tipo de archivo por extensión
+- ✅ **266.** Asociar extensiones a lenguajes
+- 🟡 **267.** Vista previa de Markdown
+- ⛔ **268.** Vista previa de Markdown junto al editor
+- ⛔ **269.** Sincronizar scroll entre Markdown y vista previa
+- ⛔ **270.** Resaltar sintaxis en bloques Markdown
+- ⛔ **271.** Mostrar imágenes dentro de Markdown
+- ✅ **272.** Abrir archivos PDF mediante visor integrado o extensión
+- ⛔ **273.** Mostrar archivos CSV mediante vista tabular
+- ⛔ **274.** Mostrar JSON formateado
+- ⛔ **275.** Plegar y desplegar bloques JSON
+- ⛔ **276.** Validar JSON contra esquema
+- ✅ **277.** Mostrar SVG en vista previa
+- ⛔ **278.** Abrir notebooks mediante extensión compatible
+- 🟡 **279.** Mostrar archivos grandes con modo optimizado
+- ⛔ **280.** Abrir archivos binarios en vista hexadecimal mediante
+- ✅ **281.** Abrir configuración visual
+- ⛔ **282.** Editar configuración JSON
+- ⛔ **283.** Buscar ajustes
+- ✅ **284.** Configurar ajustes globales
+- ⛔ **285.** Configurar ajustes por espacio de trabajo
+- ⛔ **286.** Configurar ajustes por lenguaje
+- ⛔ **287.** Administrar atajos de teclado
+- ⛔ **288.** Abrir archivo de atajos JSON
+- ⛔ **289.** Instalar extensiones
+- ⛔ **290.** Desinstalar extensiones
+- ⛔ **291.** Habilitar y deshabilitar extensiones
+- ⛔ **292.** Actualizar extensiones
+- ⛔ **293.** Consultar detalles y versiones de extensiones
+- ⛔ **294.** Administrar perfiles del editor
+- ⛔ **295.** Importar y exportar perfiles
+- ⛔ **296.** Sincronizar ajustes y extensiones
+- ⛔ **297.** Cambiar tema de color
+- ✅ **298.** Cambiar tema de iconos de archivos
+- ⛔ **299.** Configurar zoom y tamaño de fuente
+- 🟡 **300.** Usar navegación accesible y lector de pantalla
+- ✅ **301.** Transponer caracteres adyacentes
+- ⛔ **302.** Transponer palabras
+- ✅ **303.** Insertar línea antes de la actual
+- ✅ **304.** Insertar línea después de la actual
+- ✅ **305.** Borrar hasta el inicio de la línea
+- ✅ **306.** Borrar hasta el final de la línea
+- ⛔ **307.** Borrar palabra anterior
+- ⛔ **308.** Borrar palabra siguiente
+- ✅ **309.** Seleccionar palabra actual
+- ✅ **310.** Seleccionar línea actual
+- ⛔ **311.** Seleccionar bloque delimitado
+- ⛔ **312.** Expandir selección según sintaxis
+- ⛔ **313.** Contraer selección según sintaxis
+- ✅ **314.** Convertir tabulaciones en espacios
+- ✅ **315.** Convertir espacios iniciales en tabulaciones
+- ✅ **316.** Eliminar líneas duplicadas de una selección
+- ✅ **317.** Eliminar líneas en blanco de una selección
+- ⛔ **318.** Añadir prefijo a líneas seleccionadas
+- ⛔ **319.** Añadir sufijo a líneas seleccionadas
+- ⛔ **320.** Aplicar transformación de texto mediante comando
+- ⛔ **321.** Plegar bloque de código actual
+- ⛔ **322.** Desplegar bloque de código actual
+- ⛔ **323.** Plegar todos los bloques
+- ⛔ **324.** Desplegar todos los bloques
+- ⛔ **325.** Plegar nivel de indentación
+- ⛔ **326.** Desplegar nivel de indentación
+- ⛔ **327.** Plegar comentarios
+- ⛔ **328.** Plegar regiones con marcadores
+- ⛔ **329.** Definir regiones plegables personalizadas
+- ⛔ **330.** Mostrar controles de plegado al margen
+- ⛔ **331.** Plegar imports o declaraciones iniciales
+- ⛔ **332.** Plegar bloques recursivamente
+- ⛔ **333.** Plegar selección
+- ⛔ **334.** Desplegar selección
+- ⛔ **335.** Mantener estado de plegado por archivo
+- 🔌 **336.** Mostrar estructura jerárquica de símbolos
+- ⛔ **337.** Navegar por encabezados del documento
+- ✅ **338.** Mostrar breadcrumbs de símbolos
+- ✅ **339.** Navegar por breadcrumbs
+- ⛔ **340.** Configurar comportamiento de plegado
+- ⛔ **341.** Activar o desactivar minimapa
+- ⛔ **342.** Configurar tamaño del minimapa
+- ⛔ **343.** Configurar escala del minimapa
+- ⛔ **344.** Configurar lado del minimapa
+- ⛔ **345.** Mostrar vista previa de código en minimapa
+- ⛔ **346.** Mostrar regla vertical de longitud de línea
+- ⛔ **347.** Configurar varias reglas de longitud
+- ⛔ **348.** Mostrar caracteres de espacio en blanco
+- ⛔ **349.** Mostrar espacios finales
+- ⛔ **350.** Mostrar tabulaciones visibles
+- ⛔ **351.** Mostrar caracteres de control
+- ⛔ **352.** Mostrar caracteres de salto de línea
+- ⛔ **353.** Configurar guías de indentación activas
+- ⛔ **354.** Resaltar rango de selección en minimapa
+- 🟡 **355.** Mostrar decoraciones de Git en el margen
+- ⛔ **356.** Mostrar indicadores de problemas en el margen
+- ⛔ **357.** Mostrar indicadores de búsqueda en el margen
+- ⛔ **358.** Mostrar cambios recientes en el margen
+- ⛔ **359.** Configurar animaciones del cursor
+- ⛔ **360.** Configurar estilo del cursor
+- ⛔ **361.** Mostrar hover de documentación
+- ⛔ **362.** Mantener hover abierto para interactuar
+- ⛔ **363.** Abrir documentación emergente en ventana fija
+- ⛔ **364.** Mostrar tipo inferido al pasar el cursor
+- ⛔ **365.** Mostrar valor de variable en hover durante depuración
+- ⛔ **366.** Mostrar vista previa de color CSS
+- ⛔ **367.** Mostrar vista previa de enlaces
+- ⛔ **368.** Mostrar información de parámetros
+- ⛔ **369.** Mostrar errores completos en hover
+- ⛔ **370.** Mostrar acciones rápidas en hover
+- ⛔ **371.** Abrir definición en vista lateral
+- ⛔ **372.** Abrir referencias en vista lateral
+- ⛔ **373.** Mostrar vista previa de símbolo sin navegar
+- ⛔ **374.** Mostrar información de importación
+- ⛔ **375.** Mostrar documentación de etiquetas HTML
+- ⛔ **376.** Mostrar información de propiedades CSS
+- ⛔ **377.** Mostrar información de claves JSON
+- ⛔ **378.** Mostrar sugerencias de cierre de etiquetas
+- ⛔ **379.** Configurar demora de hover
+- ⛔ **380.** Configurar ayudas emergentes por lenguaje
+- ⛔ **381.** Autocerrar etiquetas HTML
+- ⛔ **382.** Renombrar etiquetas HTML emparejadas
+- ⛔ **383.** Autoactualizar etiquetas HTML emparejadas
+- ⛔ **384.** Emmet para abreviaturas HTML
+- ⛔ **385.** Expandir abreviaturas Emmet en JSX
+- ⛔ **386.** Autocompletar atributos HTML
+- ⛔ **387.** Validar estructura HTML
+- ⛔ **388.** Navegar a definiciones de clases CSS
+- ⛔ **389.** Autocompletar selectores CSS
+- ⛔ **390.** Mostrar colores CSS en línea
+- ⛔ **391.** Mostrar vista previa de colores al editar
+- ⛔ **392.** Autocompletar variables CSS
+- ⛔ **393.** Navegar entre archivos CSS e HTML relacionados
+- ⛔ **394.** Abrir recursos referenciados desde HTML
+- ✅ **395.** Previsualizar imágenes desde el explorador
+- ✅ **396.** Previsualizar archivos SVG
+- ⛔ **397.** Mostrar dimensiones de imágenes
+- ⛔ **398.** Detectar referencias a recursos inexistentes
+- ⛔ **399.** Mostrar sugerencias para rutas relativas
+- ⛔ **400.** Abrir vista previa web mediante extensión
+- ⛔ **401.** Crear encabezados Markdown mediante atajos
+- ⛔ **402.** Autocompletar enlaces Markdown
+- ⛔ **403.** Autocompletar referencias a archivos
+- ⛔ **404.** Insertar tabla Markdown mediante comando
+- ⛔ **405.** Formatear tablas Markdown
+- ⛔ **406.** Ordenar listas Markdown
+- ⛔ **407.** Renumerar listas ordenadas
+- ⛔ **408.** Insertar bloques de código con lenguaje
+- ⛔ **409.** Vista previa de diagramas Mermaid mediante extensión
+- ⛔ **410.** Vista previa de fórmulas LaTeX mediante extensión
+- 🟡 **411.** Navegar a encabezados Markdown
+- ⛔ **412.** Generar índice de contenidos
+- ⛔ **413.** Actualizar índice de contenidos
+- ⛔ **414.** Comprobar enlaces Markdown
+- ✅ **415.** Abrir enlaces locales
+- ✅ **416.** Abrir enlaces externos
+- ⛔ **417.** Mostrar imágenes relativas en vista previa
+- ⛔ **418.** Configurar estilos de vista previa
+- ⛔ **419.** Exportar Markdown mediante extensión
+- ⛔ **420.** Sincronizar posición entre fuente y vista previa
+- ⛔ **421.** Configurar navegación por tabulación
+- ⛔ **422.** Configurar orden de foco entre paneles
+- ⛔ **423.** Mostrar foco visible en todos los controles
+- ⛔ **424.** Anunciar cambios de estado a lectores de pantalla
+- ⛔ **425.** Anunciar errores del editor
+- ⛔ **426.** Configurar anuncios de autocompletado
+- ⛔ **427.** Configurar sonidos de señales
+- 🟡 **428.** Desactivar efectos de movimiento
+- ⛔ **429.** Aumentar áreas interactivas
+- ⛔ **430.** Configurar cursor de alto contraste
+- ⛔ **431.** Configurar selección de alto contraste
+- ⛔ **432.** Ajustar espaciado de interfaz
+- ⛔ **433.** Configurar ligaduras tipográficas
+- ⛔ **434.** Configurar suavizado de fuentes
+- ⛔ **435.** Ajustar escala de interfaz independientemente del zoom
+- ⛔ **436.** Usar navegación por encabezados de panel
+- ⛔ **437.** Asignar atajos accesibles alternativos
+- ⛔ **438.** Mostrar etiquetas textuales junto a iconos
+- ⛔ **439.** Configurar comportamiento de foco al abrir archivos
+- ⛔ **440.** Consultar mapa de atajos accesibles
+- ⛔ **441.** Abrir varias carpetas en un espacio de trabajo
+- 🔌 **442.** Guardar espacio de trabajo con nombre
+- 🔌 **443.** Guardar archivo de espacio de trabajo
+- 🔌 **444.** Cambiar entre espacios de trabajo recientes
+- ⛔ **445.** Duplicar configuración de espacio de trabajo
+- 🔌 **446.** Agregar carpeta al espacio de trabajo
+- 🔌 **447.** Quitar carpeta del espacio de trabajo
+- ⛔ **448.** Asignar nombre visible a cada raíz
+- ⛔ **449.** Configurar colores por raíz del espacio de trabajo
+- ⛔ **450.** Configurar ajustes por carpeta raíz
+- ⛔ **451.** Definir archivos recomendados al abrir el espacio
+- ⛔ **452.** Restaurar terminales de la sesión anterior
+- ⛔ **453.** Restaurar grupos y divisiones del editor
+- ⛔ **454.** Restaurar posiciones de paneles
+- 🟡 **455.** Recordar archivos abiertos por espacio
+- ⛔ **456.** Abrir espacio de trabajo desde archivo de configuración
+- ⛔ **457.** Administrar espacios de trabajo confiables
+- ⛔ **458.** Marcar espacio como solo lectura
+- ⛔ **459.** Abrir espacio de trabajo en ventana nueva
+- ⛔ **460.** Cerrar espacio de trabajo sin cerrar la ventana
+- ⛔ **461.** Mostrar vista de extensiones instaladas
+- ⛔ **462.** Buscar extensiones en un catálogo
+- ⛔ **463.** Instalar extensión desde archivo VSIX
+- ⛔ **464.** Instalar extensión desde identificador
+- ⛔ **465.** Actualizar una extensión individual
+- ⛔ **466.** Actualizar todas las extensiones
+- ⛔ **467.** Ver dependencias de una extensión
+- ⛔ **468.** Ver contribuciones de una extensión
+- ⛔ **469.** Configurar ajustes aportados por extensiones
+- ⛔ **470.** Ejecutar comandos aportados por extensiones
+- ⛔ **471.** Mostrar teclas asignadas por extensiones
+- ⛔ **472.** Desactivar extensión solo en el espacio actual
+- ⛔ **473.** Iniciar ventana de desarrollo de extensiones
+- ⛔ **474.** Recargar ventana para aplicar cambios
+- ⛔ **475.** Mostrar errores de activación de extensiones
+- ⛔ **476.** Abrir página de documentación de extensión
+- ⛔ **477.** Administrar extensiones recomendadas por proyecto
+- ⛔ **478.** Exportar lista de extensiones
+- ⛔ **479.** Importar lista de extensiones
+- ⛔ **480.** Diagnosticar conflictos entre extensiones
+- ⛔ **481.** Mostrar tiempo de apertura del proyecto
+- ⛔ **482.** Mostrar tiempo de activación de extensiones
+- ⛔ **483.** Identificar extensiones que consumen recursos
+- 🔌 **484.** Abrir administrador de procesos del IDE
+- 🔌 **485.** Mostrar uso de CPU por proceso del IDE
+- 🔌 **486.** Mostrar memoria por proceso del IDE
+- ⛔ **487.** Reiniciar proceso de extensión
+- ⛔ **488.** Recargar ventana del editor
+- ⛔ **489.** Abrir herramientas de desarrollo
+- ⛔ **490.** Mostrar consola de errores de interfaz
+- 🔌 **491.** Exportar registros de diagnóstico
+- ⛔ **492.** Configurar nivel de registro
+- ⛔ **493.** Limpiar registros antiguos
+- 🔌 **494.** Detectar archivos demasiado grandes
+- ⛔ **495.** Abrir archivos grandes en modo optimizado
+- ⛔ **496.** Desactivar resaltado costoso en archivos grandes
+- 🔌 **497.** Limitar búsqueda en directorios pesados
+- ⛔ **498.** Mostrar progreso de indexación
+- ⛔ **499.** Pausar tareas de indexación
+- ⛔ **500.** Restaurar estado tras cierre inesperado
+
+## Resumen
+
+- ✅+🔌 Frontend+Backend: 29
+- ✅ Solo frontend: 81
+- 🔌 Solo backend: 32
+- 🟡 Parcial: 20
+- ⛔ Pendiente/no feasible: 338
+- Total: 500
+
+## Backend disponible (`/api/ide/call`)
+
+fs_list/mkdir/create/rename/delete/copy/move · git_status/stage/unstage/discard/diff/commit/log/branches/
+checkout/merge/remote/blame · search/replace (glob,regex,case,whole,preview) · history_save/list/read/diff ·
+symbols · tasks_list/run · file_meta · stats · workspace_save/list.
+
+Las ⛔ que dependen de LSP (autocompletado, ir a definición, refactor semántico), debugger real o
+marketplace de extensiones no se simulan en web; quedan pendientes de un backend de lenguaje/depuración.

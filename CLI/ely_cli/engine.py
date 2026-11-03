@@ -352,6 +352,10 @@ class Engine:
         from . import workspace
         return workspace.run_command(self.root, command, cwd)
 
+    def ide_call(self, op: str, args: dict[str, Any]) -> dict[str, Any]:
+        from . import ideops
+        return ideops.call(self.root, op, args or {})
+
     # ------------------------------------------------------------------ memoria
     def memories(self) -> list[dict[str, Any]]:
         return self._read_json("memory.json", [])

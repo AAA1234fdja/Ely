@@ -377,12 +377,28 @@ class ElyHandler(BaseHTTPRequestHandler):
 
         if method == "POST" and route == "/workspace/file":
             body = self.read_json()
+            path = str(body.get("path") or "")
             try:
-                return self.json(workspace.write_file(
-                    engine.root, str(body.get("path") or ""), str(body.get("content") or "")
-                ))
+                # Historial local: guarda la versión anterior antes de sobrescribir.
+                old = workspace.read_file(engine.root, path)
+                if not old.get("binary"):
+                    from . import ideops
+                    ideops.history_save(engine.root, path, old.get("content", ""))
+            except Exception:
+                pass  # archivo nuevo o no legible: sin historial previo
+            try:
+                return self.json(workspace.write_file(engine.root, path, str(body.get("content") or "")))
             except workspace.WorkspaceError as exc:
                 raise ApiError(exc.status, str(exc)) from exc
+
+        if method == "POST" and route == "/ide/call":
+            body = self.read_json()
+            try:
+                return self.json(engine.ide_call(str(body.get("op") or ""), body.get("args") or {}))
+            except workspace.WorkspaceError as exc:
+                raise ApiError(exc.status, str(exc)) from exc
+            except KeyError as exc:
+                raise ApiError(400, f"Falta argumento: {exc}") from exc
 
         if method == "GET" and route == "/workspace/raw":
             q = self.query()

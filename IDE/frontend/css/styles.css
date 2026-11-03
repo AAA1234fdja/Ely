@@ -1071,3 +1071,21 @@ label.field .hint { color: var(--muted); font-size: 10px; font-weight: 400; }
 
 .code-wrap.wrap .code-ta { white-space: pre-wrap; word-break: break-word; }
 .code-wrap.wrap .code-hl-inner { white-space: pre-wrap; word-break: break-word; }
+
+/* ---- IDE: SCM real, diff, menú contextual, búsqueda con reemplazo ---- */
+.vsc-scm { display: flex; flex-direction: column; gap: 6px; padding: 0 8px 12px; overflow-y: auto; }
+.vsc-scm-branch { font-size: 12px; color: var(--vsc-text); padding: 4px 2px; font-weight: 600; }
+.vsc-scm-status { flex: none; width: 20px; color: #e2c08d; font-size: 11px; font-weight: 700; }
+.vsc-scm-log { font-size: 11px; color: var(--vsc-muted); padding: 3px 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vsc-scm .icon-btn { width: 20px; height: 20px; font-size: 12px; padding: 0; flex: none; }
+.vsc-diff { position: absolute; inset: 0; overflow: auto; margin: 0; padding: 10px 14px; font-family: Consolas, monospace; font-size: 12.5px; background: #1e1e1e; }
+.vsc-diff-line { white-space: pre-wrap; color: #d4d4d4; }
+.vsc-diff-line.add { background: rgba(70,149,74,.25); color: #b5cea8; }
+.vsc-diff-line.del { background: rgba(201,60,60,.25); color: #f48771; }
+.vsc-diff-line.hunk { color: #569cd6; }
+.vsc-ctx { position: fixed; z-index: 100; min-width: 180px; background: #252526; border: 1px solid #454545; border-radius: 6px; box-shadow: 0 6px 20px rgba(0,0,0,.5); padding: 4px; }
+.vsc-search-box { display: flex; flex-direction: column; gap: 5px; padding: 0 8px 8px; }
+.vsc-search-opts { display: flex; gap: 4px; }
+.vsc-opt { background: #3c3c3c; border: 1px solid #454545; color: var(--vsc-muted); border-radius: 3px; font-size: 11px; padding: 3px 7px; cursor: pointer; }
+.vsc-opt.on { color: #fff; border-color: var(--vsc-accent); background: var(--vsc-accent); }
+.vsc-outline { border-top: 1px solid var(--vsc-border); max-height: 180px; overflow-y: auto; }

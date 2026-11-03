@@ -29,6 +29,7 @@
       tabs: [], active: null, docs: {}, dirty: {},
       activity: "explorer", opened: false, projectRoot: null,
       openDirs: new Set(),
+      sort: "name", hidden: false,
       panel: { open: false, tab: "terminal" },
       layout: { menubar: true, activity: true, sidebar: true, status: true },
       wordWrap: false, termCwd: "", history: [], histIdx: 0
@@ -102,6 +103,8 @@
         { label: T("ide.saveAs"), key: "Ctrl+Shift+S", action: saveAs },
         { label: T("ide.saveAll"), action: saveAll },
         "-",
+        { label: T("ide.localHistory"), action: showHistory },
+        "-",
         { label: T("ide.closeEditor"), key: "Ctrl+F4", action: closeActiveTab },
         { label: T("ide.closeFolder"), action: closeProject }
       ]));
@@ -117,7 +120,29 @@
         { label: T("ide.replace"), key: "Ctrl+H", action: replaceInFile },
         { label: T("ide.findInFiles"), key: "Ctrl+Shift+F", action: () => setActivity("search") },
         "-",
-        { label: T("ide.toggleComment"), key: "Ctrl+}", action: toggleComment }
+        { label: T("ide.toggleComment"), key: "Ctrl+}", action: toggleComment },
+        { label: T("ide.transform"), sub: [
+          { label: T("ide.tUpper"), action: () => transform("upper") },
+          { label: T("ide.tLower"), action: () => transform("lower") },
+          { label: T("ide.tSort"), action: () => transform("sortLines") },
+          { label: T("ide.tJoin"), action: () => transform("joinLines") },
+          { label: T("ide.tTrim"), action: () => transform("trimTrailing") },
+          { label: T("ide.tFinalNl"), action: () => transform("finalNewline") },
+          { label: T("ide.tDedupe"), action: () => transform("dedupeLines") },
+          { label: T("ide.tRemoveBlank"), action: () => transform("removeBlank") },
+          { label: T("ide.tTabsSpaces"), action: () => transform("tabsToSpaces") },
+          { label: T("ide.tSpacesTabs"), action: () => transform("spacesToTabs") },
+          { label: T("ide.tDeleteLine"), action: () => transform("deleteLine") },
+          { label: T("ide.tLineBefore"), action: () => transform("lineBefore") },
+          { label: T("ide.tLineAfter"), action: () => transform("lineAfter") },
+          { label: T("ide.tDelStart"), action: () => transform("delToStart") },
+          { label: T("ide.tDelEnd"), action: () => transform("delToEnd") },
+          { label: T("ide.tIndent"), action: () => transform("indent") },
+          { label: T("ide.tOutdent"), action: () => transform("outdent") },
+          { label: T("ide.tSelectWord"), action: () => transform("selectWord") },
+          { label: T("ide.tSelectLine"), action: () => transform("selectLine") },
+          { label: T("ide.tTranspose"), action: () => transform("transposeChars") }
+        ] }
       ]));
       menubar.appendChild(menu(T("ide.selection"), [
         { label: T("ide.selectAll"), key: "Ctrl+A", action: () => codeTA && codeTA.select() },
@@ -200,10 +225,10 @@
       UI.clear(sidebar);
       if (state.activity === "explorer") return renderExplorer();
       if (state.activity === "search") return renderSearch();
-      const titles = { scm: T("ide.scm"), run: T("ide.runDebug"), extensions: T("ide.extensions") };
-      sidebar.appendChild(UI.el("div", { class: "vsc-side-title", text: (titles[state.activity] || "").toUpperCase() }));
-      const msgs = { scm: T("ide.scmEmpty"), run: T("ide.runEmpty"), extensions: T("ide.extEmpty") };
-      sidebar.appendChild(UI.el("div", { class: "vsc-side-empty", text: msgs[state.activity] || "" }));
+      if (state.activity === "scm") return renderSCM();
+      if (state.activity === "run") return renderRun();
+      sidebar.appendChild(UI.el("div", { class: "vsc-side-title", text: T("ide.extensions").toUpperCase() }));
+      sidebar.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ide.extEmpty") }));
     }
 
     const sourceSelect = UI.el("select", { class: "vsc-select", onchange: (e) => { state.source = e.target.value; state.projectRoot = null; state.tabs = []; state.docs = {}; state.active = null; renderAll(); reloadSource(); } }, [
@@ -238,40 +263,177 @@
         sourceSelect, repoSelect, storageSelect,
         UI.el("button", { class: "icon-btn", html: "⟳", title: T("common.refresh"), onclick: reloadSource })
       ]));
+      const sortSel = UI.el("select", { class: "vsc-select", onchange: (e) => { state.sort = e.target.value; renderTree(); } }, [
+        UI.el("option", { value: "name", selected: state.sort === "name", text: T("ide.sortName") }),
+        UI.el("option", { value: "type", selected: state.sort === "type", text: T("ide.sortType") }),
+        UI.el("option", { value: "size", selected: state.sort === "size", text: T("ide.sortSize") })
+      ]);
+      const hidBtn = UI.el("button", { class: "icon-btn", html: "👁", title: T("ide.showHidden"), onclick: () => { state.hidden = !state.hidden; renderTree(); } });
+      sidebar.appendChild(UI.el("div", { class: "vsc-side-controls" }, [sortSel, hidBtn]));
       if (state.projectRoot) sidebar.appendChild(UI.el("div", { class: "vsc-project-name", text: state.projectRoot }));
       sidebar.appendChild(fileList);
       renderTree();
+      const outline = UI.el("div", { class: "vsc-outline" });
+      sidebar.appendChild(outline);
+      renderOutline(outline);
     }
 
     function renderSearch() {
       sidebar.appendChild(UI.el("div", { class: "vsc-side-title", text: T("ide.search").toUpperCase() }));
       const input = UI.el("input", { class: "vsc-search-input", placeholder: T("ide.searchPlaceholder") });
+      const repl = UI.el("input", { class: "vsc-search-input", placeholder: T("ide.replace") });
+      const inc = UI.el("input", { class: "vsc-search-input", placeholder: T("ide.includeGlob") });
+      const exc = UI.el("input", { class: "vsc-search-input", placeholder: T("ide.excludeGlob") });
+      const opt = { regex: false, case: false, whole: false };
+      const tog = (key, label) => { const b = UI.el("button", { class: "vsc-opt", text: label, title: label }); b.addEventListener("click", () => { opt[key] = !opt[key]; b.classList.toggle("on", opt[key]); }); return b; };
       const results = UI.el("div", { class: "vsc-tree" });
-      sidebar.appendChild(UI.el("div", { style: { padding: "8px" } }, [input]));
+      const doSearch = async () => {
+        const q = input.value.trim(); UI.clear(results);
+        if (q.length < 2) return;
+        results.appendChild(UI.loading(T("common.loading")));
+        try {
+          const data = await API.ide("search", { q, include: inc.value, exclude: exc.value, regex: opt.regex, case: opt.case, whole: opt.whole });
+          UI.clear(results);
+          const hits = (data.matches || []).slice(0, 80);
+          if (!hits.length) { results.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ide.noResults") })); return; }
+          hits.forEach((h) => {
+            const node = UI.el("div", { class: "vsc-tree-item", title: h.text }, [
+              window.Icons ? Icons.file(h.path) : null,
+              UI.el("span", { class: "trunc", text: h.path.split("/").pop() }),
+              UI.el("span", { class: "muted", style: { fontSize: "10px", flex: "none" }, text: ":" + h.line })
+            ]);
+            node.addEventListener("click", () => { state.source = "workspace"; state.projectRoot = null; openFile(h.path); });
+            results.appendChild(node);
+          });
+        } catch (e) { UI.clear(results); results.appendChild(UI.errBox(e)); }
+      };
+      const doReplace = async (preview) => {
+        const q = input.value.trim(); if (q.length < 2) return;
+        const r = await API.ide("replace", { q, repl: repl.value, include: inc.value, exclude: exc.value, preview });
+        const n = (r.changed || []).reduce((s, c) => s + c.count, 0);
+        UI.toast("ok", preview ? T("ide.previewReplace") : T("ide.replace"), n + " " + T("ide.matches"));
+        if (!preview) { state.docs = {}; doSearch(); }
+      };
+      sidebar.appendChild(UI.el("div", { class: "vsc-search-box" }, [
+        input, repl,
+        UI.el("div", { class: "vsc-search-opts" }, [tog("case", "Aa"), tog("whole", "ab"), tog("regex", ".*"),
+          UI.el("button", { class: "vsc-opt", text: "⯈", title: T("ide.previewReplace"), onclick: () => doReplace(true) }),
+          UI.el("button", { class: "vsc-opt", text: "⇄", title: T("ide.replace"), onclick: () => doReplace(false) })]),
+        inc, exc
+      ]));
       sidebar.appendChild(results);
       let timer = null;
-      input.addEventListener("input", () => {
-        clearTimeout(timer);
-        timer = setTimeout(async () => {
-          const q = input.value.trim(); UI.clear(results);
-          if (q.length < 2) return;
-          results.appendChild(UI.loading(T("common.loading")));
-          try {
-            const data = await API.searchWorkspace(q); UI.clear(results);
-            const hits = (data.matches || []).slice(0, 60);
-            if (!hits.length) { results.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ide.noResults") })); return; }
-            hits.forEach((h) => {
-              const node = UI.el("div", { class: "vsc-tree-item", title: h.text }, [
-                window.Icons ? Icons.file(h.path) : null,
-                UI.el("span", { class: "trunc", text: h.path.split("/").pop() }),
-                UI.el("span", { class: "muted", style: { fontSize: "10px", flex: "none" }, text: ":" + h.line })
-              ]);
-              node.addEventListener("click", () => { state.source = "workspace"; state.projectRoot = null; openFile(h.path); });
-              results.appendChild(node);
-            });
-          } catch (e) { UI.clear(results); results.appendChild(UI.errBox(e)); }
-        }, 300);
+      input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(doSearch, 300); });
+    }
+
+    /* ---------------------------------------------------------- SCM (Git real) */
+    async function renderSCM() {
+      sidebar.appendChild(UI.el("div", { class: "vsc-side-title", text: T("ide.scm").toUpperCase() }));
+      const box = UI.el("div", { class: "vsc-scm" });
+      sidebar.appendChild(box);
+      let st;
+      try { st = await API.ide("git_status"); } catch (e) { box.appendChild(UI.errBox(e)); return; }
+      if (!st.git) { box.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ide.scmEmpty") })); return; }
+      const msg = UI.el("input", { class: "vsc-search-input", placeholder: T("ide.commitMsg") });
+      box.appendChild(msg);
+      box.appendChild(UI.el("button", { class: "vsc-side-btn", text: "✓ " + T("ide.commit"), onclick: async () => {
+        const r = await API.ide("git_commit", { message: msg.value || "commit" });
+        UI.toast(r.ok ? "ok" : "err", T("ide.commit"), (r.output || "").slice(0, 120)); renderSCM();
+      } }));
+      box.appendChild(UI.el("div", { class: "vsc-scm-branch", text: "⑂ " + st.branch }));
+      const changes = UI.el("div", { class: "vsc-tree" });
+      box.appendChild(changes);
+      if (!st.files.length) changes.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ide.noChanges") }));
+      st.files.forEach((f) => {
+        const row = UI.el("div", { class: "vsc-tree-item" }, [
+          UI.el("span", { class: "vsc-scm-status", text: f.status }),
+          UI.el("span", { class: "trunc", text: f.path }),
+          UI.el("button", { class: "icon-btn", text: f.staged ? "−" : "+", title: f.staged ? T("ide.unstage") : T("ide.stage"), onclick: async () => { await API.ide(f.staged ? "git_unstage" : "git_stage", { paths: [f.path] }); renderSCM(); } }),
+          UI.el("button", { class: "icon-btn", text: "↺", title: T("ide.discard"), onclick: async () => { await API.ide("git_discard", { paths: [f.path] }); renderSCM(); } }),
+          UI.el("button", { class: "icon-btn", text: "Δ", title: T("ide.diff"), onclick: async () => { const d = await API.ide("git_diff", { path: f.path }); showDiff(d.diff || "(sin diff)"); } })
+        ]);
+        changes.appendChild(row);
       });
+      const log = await API.ide("git_log", { limit: 8 });
+      box.appendChild(UI.el("div", { class: "vsc-side-title", text: T("ide.history") }));
+      (log.commits || []).forEach((cmt) => box.appendChild(UI.el("div", { class: "vsc-scm-log", text: cmt.hash + " · " + cmt.message })));
+    }
+
+    function showDiff(text) {
+      UI.clear(editorPane);
+      const pre = UI.el("pre", { class: "vsc-diff" });
+      text.split("\n").forEach((line) => {
+        const cls = line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : line.startsWith("@") ? "hunk" : "";
+        pre.appendChild(UI.el("div", { class: "vsc-diff-line " + cls, text: line }));
+      });
+      editorPane.appendChild(pre);
+    }
+
+    /* ---------------------------------------------------------- Run / tareas */
+    async function renderRun() {
+      sidebar.appendChild(UI.el("div", { class: "vsc-side-title", text: T("ide.runDebug").toUpperCase() }));
+      const box = UI.el("div", { class: "vsc-scm" });
+      sidebar.appendChild(box);
+      box.appendChild(UI.el("button", { class: "vsc-side-btn", text: "▶ " + T("ide.runNoDebug"), onclick: runActive }));
+      box.appendChild(UI.el("div", { class: "vsc-side-title", text: T("ide.tasks") }));
+      try {
+        const tl = await API.ide("tasks_list");
+        if (!(tl.tasks || []).length) box.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ide.noTasks") }));
+        (tl.tasks || []).forEach((task) => box.appendChild(UI.el("button", { class: "vsc-side-btn ghost", text: task.label, onclick: async () => {
+          openPanel("output"); const r = await API.ide("tasks_run", { name: task.label });
+          UI.toast(r.code === 0 ? "ok" : "err", task.label, (r.stdout + r.stderr).slice(0, 120));
+        } })));
+      } catch (e) { box.appendChild(UI.errBox(e)); }
+    }
+
+    /* ---------------------------------------------------------- menú contextual explorer */
+    function ctxMenu(x, y, items) {
+      document.querySelectorAll(".vsc-ctx").forEach((n) => n.remove());
+      const m = UI.el("div", { class: "vsc-ctx" });
+      m.style.left = x + "px"; m.style.top = y + "px";
+      items.forEach((it) => {
+        if (it === "-") { m.appendChild(UI.el("div", { class: "vsc-sep" })); return; }
+        const b = UI.el("button", { class: "vsc-dropdown-item", text: it.label });
+        b.addEventListener("click", () => { m.remove(); it.action(); });
+        m.appendChild(b);
+      });
+      document.body.appendChild(m);
+      setTimeout(() => document.addEventListener("pointerdown", function h(e) { if (!m.contains(e.target)) { m.remove(); document.removeEventListener("pointerdown", h); } }), 0);
+    }
+    function explorerOps(path, isDir) {
+      return [
+        { label: T("ide.newFile"), action: async () => { const n = prompt(T("ide.newFile"), (path ? path + "/" : "") + "archivo.txt"); if (n) { await API.ide("fs_create", { path: n }); loadTree(); } } },
+        { label: T("ide.newFolder"), action: async () => { const n = prompt(T("ide.newFolder"), (path ? path + "/" : "") + "carpeta"); if (n) { await API.ide("fs_mkdir", { path: n }); loadTree(); } } },
+        "-",
+        { label: T("ide.rename"), action: async () => { const n = prompt(T("ide.rename"), path); if (n && n !== path) { await API.ide("fs_rename", { path, new: n }); loadTree(); } } },
+        { label: T("ide.copy"), action: async () => { const n = prompt(T("ide.copy") + " →", path + "-copia"); if (n) { await API.ide("fs_copy", { src: path, dst: n }); loadTree(); } } },
+        { label: T("ide.move"), action: async () => { const n = prompt(T("ide.move") + " →", path); if (n && n !== path) { await API.ide("fs_move", { src: path, dst: n }); loadTree(); } } },
+        "-",
+        { label: T("common.delete"), action: async () => { await API.ide("fs_delete", { path }); loadTree(); } }
+      ];
+    }
+
+    /* ---------------------------------------------------------- outline / historial */
+    async function renderOutline(container) {
+      if (!state.active) return;
+      try {
+        const s = await API.ide("symbols", { path: state.active });
+        if (!(s.symbols || []).length) return;
+        container.appendChild(UI.el("div", { class: "vsc-side-title", text: T("ide.outline") }));
+        s.symbols.forEach((sy) => container.appendChild(UI.el("div", { class: "vsc-tree-item", text: sy.name }, [])));
+      } catch (e) { /* sin símbolos */ }
+    }
+    async function showHistory() {
+      if (!state.active) return;
+      const h = await API.ide("history_list", { path: state.active });
+      const list = UI.el("div", { class: "vsc-tree" });
+      (h.history || []).forEach((v) => {
+        const n = UI.el("div", { class: "vsc-tree-item", text: new Date(Number(v.id)).toLocaleString() + " · " + UI.bytes(v.size) });
+        n.addEventListener("click", async () => { const r = await API.ide("history_read", { path: state.active, id: v.id }); ref.close(); showDiff((await API.ide("diff", { a: r.content, b: (state.docs[state.active] || {}).content || "", la: "historial", lb: "actual" })).diff); });
+        list.appendChild(n);
+      });
+      if (!(h.history || []).length) list.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ide.noHistory") }));
+      const ref = UI.modal({ title: T("ide.localHistory"), wide: true, body: list });
     }
 
     /* ---------------------------------------------------------- árbol (carpetas plegadas) */
@@ -282,6 +444,12 @@
       let entries = tree.entries || [];
       const base = state.projectRoot ? state.projectRoot + "/" : "";
       if (base) entries = entries.filter((e) => e.path.startsWith(base)).map((e) => Object.assign({}, e, { path: e.path.slice(base.length) })).filter((e) => e.path);
+      if (!state.hidden) entries = entries.filter((e) => !e.path.split("/").some((p) => p.startsWith(".")));
+      entries = entries.slice().sort((a, b) => {
+        if (state.sort === "type") return (a.type + a.path).localeCompare(b.type + b.path);
+        if (state.sort === "size") return (b.size || 0) - (a.size || 0);
+        return a.path.localeCompare(b.path);
+      });
       entries.forEach((entry) => {
         const depth = entry.path.split("/").length - 1;
         const parent = entry.path.split("/").slice(0, -1).join("/");
@@ -296,6 +464,7 @@
           ]);
           node.style.paddingLeft = (6 + depth * 12) + "px";
           node.addEventListener("click", () => { open ? state.openDirs.delete(entry.path) : state.openDirs.add(entry.path); renderTree(); });
+          node.addEventListener("contextmenu", (e) => { e.preventDefault(); ctxMenu(e.clientX, e.clientY, explorerOps(full, true)); });
           fileList.appendChild(node);
           return;
         }
@@ -307,6 +476,7 @@
         node.style.paddingLeft = (6 + depth * 12) + "px";
         node.title = full;
         node.addEventListener("click", () => openFile(full));
+        node.addEventListener("contextmenu", (e) => { e.preventDefault(); ctxMenu(e.clientX, e.clientY, explorerOps(full, false)); });
         fileList.appendChild(node);
       });
       if (!entries.length) fileList.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ide.emptyWorkspace") }));
@@ -605,6 +775,40 @@
       else if (op === "moveUp" && ls > 0) { const ps = v.lastIndexOf("\n", ls - 2) + 1; const prev = v.slice(ps, ls - 1); codeTA.setRangeText(line + "\n" + prev, ps, le, "end"); }
       else if (op === "moveDown" && le < v.length) { const ns = le + 1; let ne = v.indexOf("\n", ns); if (ne === -1) ne = v.length; const next = v.slice(ns, ne); codeTA.setRangeText(next + "\n" + line, ls, ne, "end"); }
       codeTA.dispatchEvent(new Event("input"));
+    }
+    /* Transformaciones de texto (frontend puro, catálogo 075-100 / 301-320). */
+    function transform(op) {
+      if (!codeTA) return;
+      const v = codeTA.value, s = codeTA.selectionStart, e = codeTA.selectionEnd;
+      const hasSel = e > s;
+      const ls = v.lastIndexOf("\n", s - 1) + 1; let le = v.indexOf("\n", e); if (le === -1) le = v.length;
+      const sel = hasSel ? v.slice(s, e) : v.slice(ls, le);
+      const put = (txt, a, b) => { codeTA.setRangeText(txt, a, b, "end"); codeTA.dispatchEvent(new Event("input")); };
+      const lines = sel.split("\n");
+      switch (op) {
+        case "upper": put(sel.toUpperCase(), hasSel ? s : ls, hasSel ? e : le); break;
+        case "lower": put(sel.toLowerCase(), hasSel ? s : ls, hasSel ? e : le); break;
+        case "sortLines": put(lines.slice().sort().join("\n"), hasSel ? s : ls, hasSel ? e : le); break;
+        case "joinLines": put(lines.map((l) => l.trim()).join(" "), hasSel ? s : ls, hasSel ? e : le); break;
+        case "trimTrailing": put(v.split("\n").map((l) => l.replace(/\s+$/, "")).join("\n"), 0, v.length); break;
+        case "finalNewline": if (!v.endsWith("\n")) put(v + "\n", 0, v.length); break;
+        case "dedupeLines": put([...new Set(lines)].join("\n"), hasSel ? s : ls, hasSel ? e : le); break;
+        case "removeBlank": put(lines.filter((l) => l.trim()).join("\n"), hasSel ? s : ls, hasSel ? e : le); break;
+        case "tabsToSpaces": put(v.replace(/\t/g, "  "), 0, v.length); break;
+        case "spacesToTabs": put(v.replace(/^ {2}/gm, "\t"), 0, v.length); break;
+        case "deleteLine": put("", ls, Math.min(le + 1, v.length)); break;
+        case "lineBefore": put("\n", ls, ls); break;
+        case "lineAfter": put("\n", le, le); break;
+        case "delToStart": put("", ls, s); break;
+        case "delToEnd": put("", s, le); break;
+        case "indent": put(lines.map((l) => "  " + l).join("\n"), hasSel ? s : ls, hasSel ? e : le); break;
+        case "outdent": put(lines.map((l) => l.replace(/^ {2}/, "")).join("\n"), hasSel ? s : ls, hasSel ? e : le); break;
+        case "selectWord": { const a = v.slice(0, s).search(/[\w$]*$/); const m = v.slice(s).match(/^[\w$]*/); codeTA.setSelectionRange(s - (v.slice(0, s).match(/[\w$]*$/) || [""])[0].length, s + (m ? m[0].length : 0)); break; }
+        case "selectLine": codeTA.setSelectionRange(ls, le); break;
+        case "transposeChars": if (s > 0) put(v[s] + v[s - 1], s - 1, s + 1); break;
+        default: break;
+      }
+      codeTA.focus();
     }
     function goToLine() { if (!codeTA) return; const n = parseInt(prompt(T("ide.goToLine")), 10); if (!n) return; const lines = codeTA.value.split("\n"); let pos = 0; for (let i = 0; i < Math.min(n - 1, lines.length); i++) pos += lines[i].length + 1; codeTA.focus(); codeTA.setSelectionRange(pos, pos); }
     function tabHistory(dir) { const i = state.tabs.indexOf(state.active); const n = state.tabs[i + dir]; if (n) openFile(n); }
