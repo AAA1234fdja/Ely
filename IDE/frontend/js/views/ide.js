@@ -24,11 +24,33 @@
       repos: [], repoTree: null,
       storageProfile: localStorage.getItem("ely.ideStorageProfile") || null,
       storageTree: null, tree: null,
-      tabs: (Store.get("ideTabs") || []).slice(0, 8),
-      active: Store.get("ideFile") || null,
+      tabs: [],
+      active: null,
       docs: {}, dirty: {},
-      activity: "explorer"
+      activity: "explorer",
+      /* Sin proyecto predeterminado: hay que cargarlo explícitamente. */
+      opened: false
     };
+
+    /* Abre (carga) un proyecto/origen. Hasta que no se llama, el IDE muestra
+       el estado «Ninguna carpeta abierta», como VS Code. */
+    function loadProject(source) {
+      state.opened = true;
+      state.source = source;
+      localStorage.setItem("ely.ideSource", source);
+      sourceSelect.value = source;
+      state.tabs = []; state.docs = {}; state.active = null;
+      renderAll();
+      reloadSource();
+    }
+
+    function closeProject() {
+      state.opened = false;
+      state.tabs = []; state.docs = {}; state.active = null;
+      state.tree = null; state.repoTree = null; state.storageTree = null;
+      Store.set({ ideTabs: [], ideFile: null });
+      renderAll();
+    }
 
     /* ---------------------------------------------------------- layout */
     const root = UI.el("div", { class: "vsc" });
@@ -72,6 +94,7 @@
 
     menubar.appendChild(UI.el("span", { class: "vsc-logo", text: "◈" }));
     menubar.appendChild(menu(T("ide.file"), [
+      { label: T("ide.openFolder"), action: () => loadProject("workspace") },
       { label: T("ide.openComputer"), action: openFromComputer },
       { label: T("ide.openStorage"), action: openStorageModal },
       "-",
@@ -79,6 +102,7 @@
       "-",
       { label: T("ide.save"), key: "Ctrl+S", action: save },
       "-",
+      { label: T("ide.closeFolder"), action: closeProject },
       { label: T("ide.closeEditor"), action: () => { state.active = null; state.tabs = []; renderAll(); } }
     ]));
     menubar.appendChild(menu(T("ide.edit"), [
@@ -166,6 +190,21 @@
 
     function renderExplorer() {
       sidebar.appendChild(UI.el("div", { class: "vsc-side-title", text: T("ide.explorer").toUpperCase() }));
+
+      /* Sin proyecto cargado: estado «Ninguna carpeta abierta» (como VS Code). */
+      if (!state.opened) {
+        sidebar.appendChild(UI.el("div", { class: "vsc-nofolder" }, [
+          UI.el("div", { class: "vsc-nofolder-title", text: T("ide.noFolder") }),
+          UI.el("div", { class: "vsc-side-empty", text: T("ide.noFolderHint") }),
+          UI.el("div", { class: "vsc-side-actions" }, [
+            UI.el("button", { class: "vsc-side-btn", text: T("ide.openFolder"), onclick: () => loadProject("workspace") }),
+            UI.el("button", { class: "vsc-side-btn ghost", text: T("ide.openStorage"), onclick: openStorageModal }),
+            UI.el("button", { class: "vsc-side-btn ghost", text: T("ide.newProject"), onclick: createProjectModal })
+          ])
+        ]));
+        return;
+      }
+
       repoSelect.style.display = state.source === "repo" ? "" : "none";
       storageSelect.style.display = state.source === "storage" ? "" : "none";
       const controls = UI.el("div", { class: "vsc-side-controls" }, [
@@ -173,11 +212,6 @@
         UI.el("button", { class: "icon-btn", html: "⟳", title: T("common.refresh"), onclick: () => reloadSource() })
       ]);
       sidebar.appendChild(controls);
-      const actions = UI.el("div", { class: "vsc-side-actions" }, [
-        UI.el("button", { class: "vsc-side-btn", text: T("ide.openFolder"), onclick: () => { state.source = "workspace"; sourceSelect.value = "workspace"; localStorage.setItem("ely.ideSource", "workspace"); reloadSource(); } }),
-        UI.el("button", { class: "vsc-side-btn", text: T("ide.newProject"), onclick: createProjectModal })
-      ]);
-      sidebar.appendChild(actions);
       sidebar.appendChild(fileList);
       renderTree();
     }
@@ -283,7 +317,8 @@
       state.repos.forEach((r) => repoSelect.appendChild(UI.el("option", { value: r.slug, selected: r.slug === state.repo, text: r.label })));
     }
     async function loadRepos() {
-      try { const d = await API.repos(); state.repos = d.repos || []; renderRepoOptions(); if (state.source === "repo") loadRepoTree(); }
+      /* Solo prepara la lista de repos; no abre ningún proyecto por defecto. */
+      try { const d = await API.repos(); state.repos = d.repos || []; renderRepoOptions(); }
       catch (e) { state.repos = []; renderRepoOptions(); }
     }
 
@@ -387,7 +422,7 @@
         UI.el("h2", { text: "Ely IDE" }),
         UI.el("p", { class: "muted", text: T("ide.welcome") }),
         UI.el("div", { class: "vsc-welcome-actions" }, [
-          UI.el("button", { class: "vsc-welcome-btn", text: T("ide.openFolder"), onclick: () => { state.source = "workspace"; reloadSource(); setActivity("explorer"); } }),
+          UI.el("button", { class: "vsc-welcome-btn", text: T("ide.openFolder"), onclick: () => { loadProject("workspace"); setActivity("explorer"); } }),
           UI.el("button", { class: "vsc-welcome-btn", text: T("ide.openStorage"), onclick: openStorageModal }),
           UI.el("button", { class: "vsc-welcome-btn", text: T("ide.newProject"), onclick: createProjectModal })
         ])
@@ -480,7 +515,11 @@
           } catch (e) { UI.toast("err", T("ide.notSaved"), e.message); }
         }
         input.remove();
+        if (!files.length) return;
+        state.opened = true;
         state.source = "workspace"; sourceSelect.value = "workspace";
+        localStorage.setItem("ely.ideSource", "workspace");
+        renderAll();
         loadTree();
       });
       input.click();
@@ -504,9 +543,12 @@
           ]);
           node.addEventListener("click", () => {
             ref.close();
+            state.opened = true;
             state.source = "storage"; state.storageProfile = profile;
-            sourceSelect.value = "storage"; storageSelect.style.display = "";
+            sourceSelect.value = "storage";
             localStorage.setItem("ely.ideSource", "storage");
+            renderAll();
+            loadStorageTree();
             openFile(entry.path);
           });
           list.appendChild(node);
@@ -541,7 +583,10 @@
               const result = await API.createProject(name, templateSelect.value);
               ref.close();
               UI.toast("ok", T("ide.projectCreated"), result.path);
+              state.opened = true;
               state.source = "workspace"; sourceSelect.value = "workspace";
+              localStorage.setItem("ely.ideSource", "workspace");
+              renderAll();
               await loadTree();
               openFile(result.path + "/README.md");
             } catch (e) { UI.toast("err", T("ide.notSaved"), e.message); }
@@ -555,22 +600,23 @@
     function renderAll() { renderTabs(); renderBreadcrumb(); renderEditor(); updateStatus(); renderSidebar(); }
 
     /* ---------------------------------------------------------- init */
+    /* No se carga ningún proyecto por defecto: el IDE arranca en el estado
+       «Ninguna carpeta abierta» y hay que abrir/crear uno explícitamente. */
     renderAll();
-    loadTree();
     loadRepos().then(() => {
+      /* Única excepción: un archivo pedido explícitamente desde Repos/Búsqueda
+         (handoff). Eso sí cuenta como cargar un proyecto. */
       const pending = localStorage.getItem("ely.ideOpenPath");
       if (pending) {
         localStorage.removeItem("ely.ideOpenPath");
+        state.opened = true;
         state.source = "repo"; localStorage.setItem("ely.ideSource", "repo");
-        sourceSelect.value = "repo"; repoSelect.style.display = "";
+        sourceSelect.value = "repo";
+        renderAll();
+        loadRepoTree();
         openFile(pending.replace(/^\//, ""));
-        return;
       }
-      if (state.source === "repo") loadRepoTree();
-      else if (state.source === "storage") loadStorageTree();
-      else if (state.active) openFile(state.active);
     });
-    if (state.source === "storage") loadStorageTree();
 
     document.addEventListener("keydown", function shortcuts(e) {
       if (App.route !== "ide") return;
