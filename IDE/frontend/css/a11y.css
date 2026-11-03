@@ -1,0 +1,226 @@
+/* Ely Cowork · Accesibilidad.
+ * Hoja cargada en tiempo de ejecución por a11y.js/app.js (index.html intacto).
+ * Réplica de los conceptos de VS Code: modo lector de pantalla, alto contraste,
+ * atenuado de vistas sin foco, subrayado de enlaces, foco visible, objetivos
+ * grandes y tipografía ajustable.
+ */
+
+/* ── Utilidades ───────────────────────────────────────────────────────── */
+.a11y-sr-only {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0; border: 0;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── Enlaces de salto (visibles solo al recibir foco) ─────────────────── */
+#a11y-skip { position: absolute; top: 0; left: 0; z-index: 9999; }
+.a11y-skip-link {
+  position: absolute; left: 8px; top: -60px;
+  display: inline-block; padding: 8px 14px;
+  background: var(--bg-panel, #16181d); color: var(--text, #e8eaed);
+  border: 2px solid var(--accent, #35c46b); border-radius: 0 0 8px 8px;
+  font: inherit; font-size: 13px; text-decoration: none; cursor: pointer;
+  transition: top 0.12s ease;
+}
+.a11y-skip-link:focus { top: 0; outline: 3px solid var(--accent, #35c46b); outline-offset: 2px; }
+.a11y-skip-link:nth-of-type(2):focus { left: 210px; }
+.a11y-skip-link:nth-of-type(3):focus { left: 400px; }
+
+/* ── Foco visible ─────────────────────────────────────────────────────── */
+[data-a11y-focus="ring"] :focus-visible,
+[data-a11y-focus="ring"] .vsc-tree-item:focus-visible,
+[data-a11y-focus="ring"] .vsc-tab:focus-visible,
+[data-a11y-focus="ring"] .cs-item:focus-visible {
+  outline: 3px solid var(--a11y-focus-color, #7cc4ff);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+[data-a11y-focus="ring"] .code-ta:focus-visible { outline-offset: -3px; }
+[data-a11y-focus="minimal"] :focus-visible { outline: 1px solid var(--border-strong, #444); }
+/* El foco nunca debe desaparecer del todo. */
+[data-a11y-focus="minimal"] a:focus-visible,
+[data-a11y-focus="minimal"] button:focus-visible { outline: 2px solid var(--a11y-focus-color, #7cc4ff); }
+
+/* ── Tipografía y espaciado ajustables ────────────────────────────────── */
+#view, .chat-shell, .cw-log, .a11y-view-body {
+  font-size: calc(1em * var(--a11y-font-scale, 1));
+  letter-spacing: var(--a11y-letter-spacing, 0);
+  word-spacing: var(--a11y-word-spacing, 0);
+}
+#view p, #view li, .chat-log .bubble, .cw-text, .a11y-help td {
+  line-height: var(--a11y-line-height, 1.5);
+}
+[data-a11y-font="dyslexia"] #view,
+[data-a11y-font="dyslexia"] .chat-shell,
+[data-a11y-font="dyslexia"] .a11y-view-body {
+  font-family: "OpenDyslexic", "Atkinson Hyperlegible", "Verdana", "Trebuchet MS", "DejaVu Sans", sans-serif;
+}
+[data-a11y-font="dyslexia"] .code-ta,
+[data-a11y-font="dyslexia"] .code-hl {
+  font-family: "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace;
+  letter-spacing: 0.4px;
+}
+
+/* ── Movimiento reducido ──────────────────────────────────────────────── */
+[data-a11y-motion="reduced"] *,
+[data-a11y-motion="reduced"] *::before,
+[data-a11y-motion="reduced"] *::after {
+  animation-duration: 0.001s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001s !important;
+  scroll-behavior: auto !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001s !important;
+    transition-duration: 0.001s !important;
+  }
+}
+
+/* ── Enlaces subrayados ───────────────────────────────────────────────── */
+[data-a11y-links="underline"] a:not(.btn):not(.a11y-skip-link) { text-decoration: underline; text-underline-offset: 2px; }
+
+/* ── Objetivos táctiles grandes ───────────────────────────────────────── */
+[data-a11y-targets="large"] button,
+[data-a11y-targets="large"] .icon-btn,
+[data-a11y-targets="large"] .vsc-act-btn,
+[data-a11y-targets="large"] .vsc-menu-btn,
+[data-a11y-targets="large"] .vsc-tree-item,
+[data-a11y-targets="large"] .cs-item,
+[data-a11y-targets="large"] select,
+[data-a11y-targets="large"] input[type="checkbox"] {
+  min-height: 32px;
+  min-width: 32px;
+}
+[data-a11y-targets="large"] .vsc-tree-item { padding-top: 6px; padding-bottom: 6px; }
+
+/* ── Atenuar lo que no tiene el foco (accessibility.dimUnfocused) ─────── */
+[data-a11y-dim="1"] .vsc-sidebar:not(:focus-within),
+[data-a11y-dim="1"] .vsc-activity:not(:focus-within),
+[data-a11y-dim="1"] .vsc-panel:not(:focus-within),
+[data-a11y-dim="1"] .chat-sidebar:not(:focus-within) {
+  opacity: var(--a11y-dim-opacity, 0.55);
+  transition: opacity 0.15s ease;
+}
+[data-a11y-dim="1"] .vsc-sidebar:focus-within,
+[data-a11y-dim="1"] .vsc-activity:focus-within,
+[data-a11y-dim="1"] .vsc-panel:focus-within,
+[data-a11y-dim="1"] .chat-sidebar:focus-within { opacity: 1; }
+
+/* ── Alto contraste ───────────────────────────────────────────────────── */
+[data-a11y-contrast="high"] {
+  --bg: #000000;
+  --bg-soft: #0a0a0a;
+  --bg-panel: #000000;
+  --bg-elev: #0d0d0d;
+  --text: #ffffff;
+  --text-dim: #f0f0f0;
+  --muted: #d8d8d8;
+  --border: #ffffff;
+  --border-strong: #ffffff;
+  --accent: #4dff88;
+  --accent-soft: #06331a;
+  --red: #ff8080;
+  --yellow: #ffe066;
+  --blue: #8ab4ff;
+  --a11y-focus-color: #ffff00;
+}
+[data-a11y-contrast="high"] body { background: #000; color: #fff; }
+[data-a11y-contrast="high"] .card,
+[data-a11y-contrast="high"] .sheet,
+[data-a11y-contrast="high"] .vsc-panel,
+[data-a11y-contrast="high"] .chat-sidebar,
+[data-a11y-contrast="high"] #chat-widget { border: 1px solid #fff; }
+[data-a11y-contrast="high"] .muted,
+[data-a11y-contrast="high"] .dim { color: #e6e6e6; opacity: 1; }
+[data-a11y-contrast="high"] .vsc-tab.on,
+[data-a11y-contrast="high"] .cs-item.on,
+[data-a11y-contrast="high"] .vsc-tree-item.on { outline: 2px solid #ffff00; outline-offset: -2px; }
+[data-a11y-contrast="high"] .code-hl-inner span { color: #fff !important; }
+[data-a11y-contrast="high"] .code-hl-inner .tok-key { color: #ffe066 !important; }
+[data-a11y-contrast="high"] .code-hl-inner .tok-str { color: #4dff88 !important; }
+[data-a11y-contrast="high"] .code-hl-inner .tok-num { color: #8ab4ff !important; }
+[data-a11y-contrast="high"] .code-hl-inner .tok-com { color: #d8d8d8 !important; font-style: italic; }
+
+/* Colores forzados del sistema (Windows Alto Contraste). */
+@media (forced-colors: active) {
+  .a11y-skip-link, .a11y-view-body, .vsc-tree-item:focus, .vsc-tab:focus {
+    forced-color-adjust: none;
+    background: Canvas; color: CanvasText; border: 2px solid Highlight;
+  }
+  .a11y-status.on { border: 1px solid Highlight; }
+}
+
+/* ── Modo lector de pantalla ──────────────────────────────────────────── */
+[data-a11y-screen-reader="1"] .vsc-tree-item[aria-selected="true"] { background: var(--accent-soft); }
+[data-a11y-screen-reader="1"] .code-gutter { user-select: none; }
+/* El resaltado sintáctico es decorativo: el textarea es la fuente de verdad. */
+[data-a11y-screen-reader="1"] .code-hl { opacity: 0.99; }
+
+/* ── Vista accesible (Alt+F2) ─────────────────────────────────────────── */
+#a11y-view {
+  position: fixed; inset: 8% 12%; z-index: 1200; display: none;
+  flex-direction: column; background: var(--bg-panel, #14161a);
+  color: var(--text, #e8eaed); border: 2px solid var(--accent, #35c46b);
+  border-radius: 12px; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6); overflow: hidden;
+}
+#a11y-view.open { display: flex; }
+.a11y-view-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border, #2a2d34);
+}
+.a11y-view-head h2 { margin: 0; font-size: 14px; flex: 1; }
+.a11y-view-meta { font-size: 11.5px; color: var(--muted, #9aa0a6); }
+.a11y-view-x {
+  background: none; border: none; color: inherit; font-size: 20px;
+  line-height: 1; cursor: pointer; padding: 2px 8px; border-radius: 6px;
+}
+.a11y-view-x:hover { background: var(--bg-soft, #1c1f25); }
+.a11y-view-body {
+  flex: 1; margin: 0; padding: 14px 16px; overflow: auto;
+  white-space: pre-wrap; word-break: break-word;
+  font-family: var(--mono, ui-monospace, monospace); font-size: 13px;
+  line-height: var(--a11y-line-height, 1.5);
+}
+.a11y-view-foot {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px; border-top: 1px solid var(--border, #2a2d34); font-size: 11.5px;
+}
+.a11y-view-foot .muted { margin-left: auto; }
+
+/* ── Ayuda de accesibilidad ───────────────────────────────────────────── */
+.a11y-help h3 { margin: 14px 0 6px; font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted, #9aa0a6); }
+.a11y-help-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.a11y-help-table th { text-align: left; padding: 5px 10px 5px 0; white-space: nowrap; width: 1%; font-weight: 500; }
+.a11y-help-table td { padding: 5px 0; }
+.a11y-help-table tr + tr th, .a11y-help-table tr + tr td { border-top: 1px solid var(--border, #2a2d34); }
+.a11y-help kbd {
+  display: inline-block; padding: 2px 6px; border-radius: 5px;
+  border: 1px solid var(--border-strong, #3a3f47); background: var(--bg-soft, #1c1f25);
+  font-family: var(--mono, monospace); font-size: 11px;
+}
+
+/* ── Panel de ajustes ─────────────────────────────────────────────────── */
+.a11y-set-group { border-top: 1px solid var(--border, #2a2d34); padding-top: 10px; }
+.a11y-set-group h3 { margin: 4px 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted, #9aa0a6); }
+.a11y-set-row { display: flex; align-items: center; gap: 14px; padding: 8px 0; }
+.a11y-set-row .grow { flex: 1; min-width: 0; }
+.a11y-set-label { font-size: 12.5px; display: block; }
+.a11y-set-hint { font-size: 11px; margin-top: 2px; }
+.a11y-range { display: flex; align-items: center; gap: 8px; }
+.a11y-range input[type="range"] { width: 130px; }
+.a11y-range-out { font-size: 11.5px; color: var(--muted, #9aa0a6); min-width: 46px; text-align: right; }
+
+/* ── Elemento de la barra de estado ───────────────────────────────────── */
+.a11y-status {
+  background: none; border: none; color: inherit; font: inherit; font-size: 11px;
+  padding: 0 7px; height: 100%; cursor: pointer; border-radius: 4px;
+}
+.a11y-status:hover { background: rgba(255, 255, 255, 0.14); }
+.a11y-status.on { color: var(--accent, #35c46b); font-weight: 600; }
+
+/* ── Ayudas de teclado en el IDE ──────────────────────────────────────── */
+.vsc-tree-item:focus { outline-offset: -2px; }
+[data-a11y-tab-focus="1"] .code-ta { box-shadow: inset 0 0 0 2px var(--a11y-focus-color, #7cc4ff); }

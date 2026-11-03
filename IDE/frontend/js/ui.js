@@ -53,13 +53,13 @@
   };
 
   UI.num = function (value) {
-    return new Intl.NumberFormat("es").format(Number(value) || 0);
+    return new Intl.NumberFormat(UI.locale()).format(Number(value) || 0);
   };
 
   UI.money = function (value, currency) {
     const n = Number(value) || 0;
     if (n === 0) return "—";
-    return new Intl.NumberFormat("es", {
+    return new Intl.NumberFormat(UI.locale(), {
       style: "currency", currency: currency || "USD",
       minimumFractionDigits: n < 0.01 ? 4 : 2, maximumFractionDigits: 4
     }).format(n);
@@ -71,15 +71,19 @@
     return n >= 1000 ? (n / 1000).toFixed(2) + " s" : Math.round(n) + " ms";
   };
 
+  /* Idioma activo para formatos (números, fechas relativas). */
+  UI.locale = () => (window.I18N && I18N.lang() === "en" ? "en" : "es");
+
   UI.date = function (iso) {
     if (!iso) return "—";
     const date = new Date(iso);
     if (Number.isNaN(date.getTime())) return String(iso);
+    const en = UI.locale() === "en";
     const diff = (Date.now() - date.getTime()) / 1000;
-    if (diff < 60) return "hace " + Math.max(1, Math.round(diff)) + " s";
-    if (diff < 3600) return "hace " + Math.round(diff / 60) + " min";
-    if (diff < 86400) return "hace " + Math.round(diff / 3600) + " h";
-    return date.toLocaleString("es", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+    if (diff < 60) return en ? Math.max(1, Math.round(diff)) + " s ago" : "hace " + Math.max(1, Math.round(diff)) + " s";
+    if (diff < 3600) return en ? Math.round(diff / 60) + " min ago" : "hace " + Math.round(diff / 60) + " min";
+    if (diff < 86400) return en ? Math.round(diff / 3600) + " h ago" : "hace " + Math.round(diff / 3600) + " h";
+    return date.toLocaleString(en ? "en" : "es", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
   };
 
   UI.ago = UI.date;
@@ -199,7 +203,11 @@
       host = UI.el("div", { id: "toasts" });
       document.body.appendChild(host);
     }
-    const node = UI.el("div", { class: "toast " + (kind || "") }, [
+    const node = UI.el("div", {
+      class: "toast " + (kind || ""),
+      role: kind === "err" ? "alert" : "status",
+      "aria-live": kind === "err" ? "assertive" : "polite"
+    }, [
       UI.el("div", { class: "grow" }, [
         UI.el("div", { class: "t-title", text: title }),
         body ? UI.el("div", { class: "t-body", text: String(body) }) : null
@@ -214,6 +222,7 @@
 
   /* ------------------------------------------------------------ modal */
   let modalKeyHandler = null;
+  const FOCUSABLE_SEL = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
   UI.modal = function (opts) {
     let host = document.getElementById("modal");
@@ -228,11 +237,18 @@
       UI.clear(host);
       if (modalKeyHandler) document.removeEventListener("keydown", modalKeyHandler);
       modalKeyHandler = null;
+      if (window.A11y) A11y.releaseFocus(returnFocus);
+      else if (returnFocus && returnFocus.focus) setTimeout(() => returnFocus.focus(), 0);
       if (opts && opts.onClose) opts.onClose();
     };
-    const sheet = UI.el("div", { class: "sheet" + (opts.wide ? " wide" : "") });
+    const returnFocus = document.activeElement;
+    const titleId = "modal-title-" + Math.random().toString(36).slice(2, 8);
+    const sheet = UI.el("div", {
+      class: "sheet" + (opts.wide ? " wide" : ""),
+      role: "dialog", "aria-modal": "true", "aria-labelledby": titleId
+    });
     const header = UI.el("header", null, [
-      UI.el("h3", { text: opts.title || "" }),
+      UI.el("h3", { id: titleId, text: opts.title || "" }),
       UI.el("button", { class: "x", html: "&times;", onclick: close, "aria-label": "Cerrar" })
     ]);
     if (opts.subtitle) header.appendChild(UI.el("span", { class: "muted", text: opts.subtitle }));
@@ -256,6 +272,12 @@
     host.classList.add("open");
     modalKeyHandler = (event) => { if (event.key === "Escape") close(); };
     document.addEventListener("keydown", modalKeyHandler);
+    /* Foco dentro del diálogo y de vuelta al abrirlo (WCAG 2.4.3). */
+    if (window.A11y) {
+      A11y.trapFocus(sheet);
+      const first = sheet.querySelector("input, select, textarea, button:not(.x)") || sheet.querySelector(FOCUSABLE_SEL);
+      if (first) setTimeout(() => first.focus(), 30);
+    }
     return { close, content, sheet };
   };
 

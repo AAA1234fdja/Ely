@@ -381,6 +381,17 @@
       /* Almacén único de conversación: debe existir antes de cualquier vista
          de chat y antes del widget flotante (compartido con el CLI). */
       await loadScript("js/chat-store.js");
+      /* Accesibilidad: hoja + módulo (paridad con VS Code). Se inyectan en
+         runtime para no tocar el index.html base. */
+      if (!document.getElementById("ely-a11y-css")) {
+        const link = document.createElement("link");
+        link.id = "ely-a11y-css";
+        link.rel = "stylesheet";
+        link.href = "css/a11y.css?v=" + Date.now();
+        document.head.appendChild(link);
+      }
+      await loadScript("js/a11y.js");
+      if (window.A11y) A11y.init(this);
 
       const side = document.querySelector("aside");
       if (side) {

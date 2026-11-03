@@ -33,9 +33,12 @@
         agent.id === App.agentId() ? UI.badge("activo", "accent") : null
       ]));
 
+      /* El system prompt es dato del modelo, no texto de interfaz: se muestra
+         tal cual se envía (marcado para que el traductor no lo altere). */
       card.appendChild(UI.el("p", {
-        class: "dim",
+        class: "dim", "data-noi18n": "1", lang: "es",
         style: { fontSize: "12px", margin: "12px 0", lineHeight: "1.55", maxHeight: "96px", overflow: "auto" },
+        title: t("a11y.promptAsIs"),
         text: agent.system
       }));
 
@@ -55,7 +58,7 @@
             subtitle: agent.id,
             wide: true,
             body: UI.el("pre", {
-              class: "mono",
+              class: "mono", "data-noi18n": "1", lang: "es",
               style: { whiteSpace: "pre-wrap", lineHeight: 1.6, background: "var(--bg)", padding: "14px", borderRadius: "10px", border: "1px solid var(--border)", margin: 0 },
               text: agent.system
             }),

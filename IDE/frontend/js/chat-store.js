@@ -225,6 +225,7 @@
     /* La respuesta vive en el mismo array que el resto de mensajes: así
        cualquier UI (vista o widget) pinta el streaming sin estado propio. */
     state.messages.push(assistantMsg);
+    if (window.A11y) A11y.signal("chatRequestSent");
 
     const t0 = performance.now();
     const markFirst = () => {
@@ -271,6 +272,10 @@
     if (assistantMsg.meta.reasoning_ms == null) assistantMsg.meta.reasoning_ms = assistantMsg.meta.total_ms;
     assistantMsg.meta.completed_at = nowISO();
     state.busy = false;
+    if (window.A11y) {
+      A11y.signal(assistantMsg.error ? "chatUserActionRequired" : "chatResponseReceived",
+        assistantMsg.error || (assistantMsg.content || "").slice(0, 160));
+    }
     notify("done");
     await persist();
     return { ok: !assistantMsg.error, message: assistantMsg };

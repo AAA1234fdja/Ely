@@ -45,6 +45,11 @@
       if (patch.language && window.I18N) {
         window.dispatchEvent(new Event("ely:langchange"));
         if (I18N.apply) I18N.apply(document.body);
+        /* Repintar la vista activa: los textos generados con t() se crearon
+           en el idioma anterior y no los alcanza el traductor del DOM. */
+        if (window.App && App.render) {
+          try { App.renderNav(); App.renderHeader(); App.render(); } catch (e) { /* noop */ }
+        }
       }
       return next;
     },
@@ -129,6 +134,20 @@
         });
         return UI.el("label", { class: "switch" }, [input, UI.el("span")]);
       };
+
+      /* --- accesibilidad: panel completo del módulo a11y.js --- */
+      if (window.A11y) {
+        box.appendChild(UI.el("div", {
+          class: "row between",
+          style: { borderTop: "1px solid var(--border)", padding: "10px 0", gap: "14px" }
+        }, [
+          UI.el("div", { class: "grow" }, [
+            UI.el("div", { style: { fontSize: "12.5px" }, text: t("a11y.settings") }),
+            UI.el("div", { class: "muted", style: { fontSize: "11px" }, text: t("a11y.settingsSub") })
+          ]),
+          UI.btn(t("a11y.openSettings"), () => A11y.openSettings(), { small: true })
+        ]));
+      }
 
       /* --- idioma (español / inglés), con efecto inmediato --- */
       const langSelect = UI.el("select", {

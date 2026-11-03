@@ -30,7 +30,7 @@
       ]));
       banner.appendChild(UI.el("dl", { class: "kv", style: { marginTop: "12px", fontSize: "12px" } }, [
         UI.el("dt", { text: "carpeta" }), UI.el("dd", { class: "mono", text: mcp.dir || "no existe" }),
-        UI.el("dt", { text: "manifiestos" }), UI.el("dd", { class: "mono", text: (mcp.manifests || []).join(", ") || "—" }),
+        UI.el("dt", { text: "manifiestos" }), UI.el("dd", { class: "mono", "data-noi18n": "1", text: (mcp.manifests || []).join(", ") || "—" }),
         UI.el("dt", { text: "servidores" }), UI.el("dd", { text: String((mcp.servers || []).length) })
       ]));
       if ((mcp.servers || []).length) {

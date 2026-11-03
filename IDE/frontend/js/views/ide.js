@@ -55,8 +55,15 @@
       langMode: {},
       panel: { open: false, tab: "terminal" },
       layout: { menubar: true, activity: true, sidebar: true, status: true },
-      wordWrap: false, termCwd: "", history: [], histIdx: 0
+      wordWrap: false, termCwd: "", history: [], histIdx: 0,
+      untitledCount: 0, welcome: localStorage.getItem("ely.ideWelcome") !== "0",
+      editorHint: localStorage.getItem("ely.ideEditorHint") !== "0"
     };
+    const A = () => window.A11y || null;
+    const say = (msg, opts) => { if (window.A11y) A11y.announce(msg, opts); };
+    const sig = (name, detail) => { if (window.A11y) A11y.signal(name, detail); };
+    const isUntitled = (path) => String(path || "").startsWith("untitled:");
+    const docName = (path) => isUntitled(path) ? path.slice(9) : String(path || "").split("/").pop();
     const soon = () => UI.toast("warn", T("ide.soon"), T("ide.soonBody"));
 
     /* ---- modo de lenguaje (como VS Code) ---- */
@@ -72,26 +79,128 @@
     function langExt(id) { const l = LANGS.find((x) => x[0] === id); return l ? l[2] : "txt"; }
     function iconPath(path) { return state.langMode[path] ? "file." + langExt(state.langMode[path]) : path; }
 
+    /* ------------------------------------------------------------------ *
+     * Quick pick estilo VS Code: caja arriba al centro, filtro y lista    *
+     * navegable con teclado (↑ ↓ Enter Esc).                             *
+     * ------------------------------------------------------------------ */
+    function quickPick(opts) {
+      const o = opts || {};
+      const host = UI.el("div", { class: "vsc-qp-host", role: "dialog", "aria-modal": "true", "aria-label": o.title || o.placeholder || "" });
+      const input = UI.el("input", {
+        class: "vsc-qp-input", type: "text", placeholder: o.placeholder || "",
+        role: "combobox", "aria-expanded": "true", "aria-autocomplete": "list",
+        "aria-controls": "vsc-qp-list"
+      });
+      const list = UI.el("div", { class: "vsc-qp-list", id: "vsc-qp-list", role: "listbox" });
+      host.appendChild(input); host.appendChild(list);
+      const backdrop = UI.el("div", { class: "vsc-qp-backdrop" });
+      document.body.appendChild(backdrop); document.body.appendChild(host);
+      let items = [], index = 0, closed = false;
+
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        host.remove(); backdrop.remove();
+        document.removeEventListener("keydown", onKey, true);
+        if (o.onClose) o.onClose();
+      };
+      const pick = (item) => {
+        if (!item || item.disabled) return;
+        close();
+        if (item.soon) { soon(); return; }
+        if (o.onPick) o.onPick(item);
+      };
+      const paint = () => {
+        UI.clear(list);
+        items.forEach((item, i) => {
+          if (item.separator) {
+            list.appendChild(UI.el("div", { class: "vsc-qp-sep", role: "separator", text: item.label }));
+            return;
+          }
+          const row = UI.el("div", {
+            class: "vsc-qp-item" + (i === index ? " on" : "") + (item.disabled ? " off" : ""),
+            role: "option", id: "vsc-qp-opt-" + i, "aria-selected": i === index ? "true" : "false",
+            "aria-disabled": item.disabled ? "true" : null
+          }, [
+            item.icon ? UI.el("span", { class: "vsc-qp-icon", "aria-hidden": "true" }, [item.icon]) : null,
+            UI.el("span", { class: "vsc-qp-label", text: item.label }),
+            item.description ? UI.el("span", { class: "vsc-qp-desc", text: item.description }) : null,
+            UI.el("span", { style: { flex: "1" } }),
+            item.detail ? UI.el("span", { class: "vsc-qp-detail", text: item.detail }) : null,
+            item.keybinding ? UI.el("kbd", { class: "vsc-qp-kbd", text: item.keybinding }) : null
+          ]);
+          row.addEventListener("click", () => pick(item));
+          row.addEventListener("mousemove", () => { if (index !== i) { index = i; highlight(); } });
+          list.appendChild(row);
+        });
+        if (!items.length) list.appendChild(UI.el("div", { class: "vsc-qp-empty", text: T("ide.noResults") }));
+        highlight();
+      };
+      const highlight = () => {
+        Array.from(list.querySelectorAll(".vsc-qp-item")).forEach((node, i) => {
+          node.classList.toggle("on", i === index);
+          node.setAttribute("aria-selected", i === index ? "true" : "false");
+          if (i === index) {
+            input.setAttribute("aria-activedescendant", node.id);
+            if (node.scrollIntoView) node.scrollIntoView({ block: "nearest" });
+          }
+        });
+      };
+      const selectable = () => items.filter((it) => !it.separator && !it.disabled);
+      const filter = (q) => {
+        const query = q.trim().toLowerCase();
+        items = (o.items || []).filter((it) => it.separator || !query ||
+          (it.label + " " + (it.description || "") + " " + (it.id || "")).toLowerCase().includes(query));
+        index = 0;
+        while (items[index] && items[index].separator) index += 1;
+        paint();
+      };
+      function onKey(event) {
+        if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); return; }
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          const rows = items.map((it, i) => [it, i]).filter(([it]) => !it.separator && !it.disabled);
+          if (!rows.length) return;
+          const at = rows.findIndex(([, i]) => i === index);
+          const next = event.key === "ArrowDown" ? (at + 1) % rows.length : (at - 1 + rows.length) % rows.length;
+          index = rows[next][1];
+          highlight();
+          return;
+        }
+        if (event.key === "Enter") {
+          event.preventDefault();
+          const item = items[index];
+          if (o.onEnter && o.onEnter(input.value, item) === true) return;
+          pick(item);
+        }
+      }
+      input.addEventListener("input", () => { filter(input.value); if (o.onInput) o.onInput(input.value); });
+      backdrop.addEventListener("click", close);
+      document.addEventListener("keydown", onKey, true);
+      filter("");
+      setTimeout(() => input.focus(), 30);
+      say(o.placeholder || o.title || "");
+      return { close, input, list, get items() { return selectable(); } };
+    }
+
     /* Selector de modo de lenguaje del archivo activo (clic en la barra de estado). */
     function selectLanguage() {
       if (!state.active) { UI.toast("warn", T("ide.openFirst")); return; }
-      const input = UI.el("input", { class: "vsc-search-input", placeholder: T("ide.selectLanguage") });
-      const list = UI.el("div", { class: "vsc-tree", style: { maxHeight: "320px" } });
-      const draw = (q) => {
-        UI.clear(list);
-        LANGS.filter((l) => (l[0] + l[1]).toLowerCase().includes(q.toLowerCase())).forEach((l) => {
-          const n = UI.el("div", { class: "vsc-tree-item" + (langFor(state.active) === l[0] ? " on" : "") }, [
-            window.Icons ? Icons.file("file." + l[2], 14) : null,
-            UI.el("span", { text: l[1] }),
-            UI.el("span", { class: "muted", style: { marginLeft: "auto", fontSize: "10px" }, text: "." + l[2] })
-          ]);
-          n.addEventListener("click", () => { state.langMode[state.active] = l[0]; ref.close(); renderEditor(); updateStatus(); renderTabs(); });
-          list.appendChild(n);
-        });
-      };
-      input.addEventListener("input", () => draw(input.value));
-      const ref = UI.modal({ title: T("ide.selectLanguage"), body: UI.el("div", { class: "stack" }, [input, list]) });
-      draw(""); setTimeout(() => input.focus(), 50);
+      const current = langFor(state.active);
+      quickPick({
+        title: T("ide.selectLanguage"),
+        placeholder: T("ide.selectLanguageMode"),
+        items: LANGS.map((l) => ({
+          id: l[0], label: l[1], description: "(" + l[0] + ")",
+          detail: current === l[0] ? T("ide.currentLanguage") : "",
+          icon: window.Icons ? Icons.file("file." + l[2], 15) : null
+        })),
+        onPick: (item) => {
+          state.langMode[state.active] = item.id;
+          renderEditor(); updateStatus(); renderTabs();
+          say(T("ide.language") + ": " + item.label);
+        }
+      });
     }
 
     /* ---------------------------------------------------------- layout */
@@ -146,8 +255,8 @@
       UI.clear(menubar);
       menubar.appendChild(UI.el("span", { class: "vsc-logo", text: "◈" }));
       menubar.appendChild(menu(T("ide.file"), [
-        { label: T("ide.newTextFile"), key: "Ctrl+N", action: () => newFileModal(".txt") },
-        { label: T("ide.newFile"), action: () => newFileModal("") },
+        { label: T("ide.newTextFile"), key: "Ctrl+N", action: () => newUntitled("plaintext") },
+        { label: T("ide.newFile"), action: newFileQuickPick },
         { label: T("ide.newWindow"), action: () => window.open(location.href, "_blank") },
         "-",
         { label: T("ide.openFile"), key: "Ctrl+O", action: openFromComputer },
@@ -266,7 +375,10 @@
       ["scm", "⑂", T("ide.scm")], ["run", "▶", T("ide.runDebug")], ["extensions", "⧉", T("ide.extensions")]
     ];
     ACT.forEach(([id, icon, label]) => {
-      const b = UI.el("button", { class: "vsc-act-btn" + (state.activity === id ? " on" : ""), title: label, html: icon });
+      const b = UI.el("button", {
+        class: "vsc-act-btn" + (state.activity === id ? " on" : ""), title: label, html: icon,
+        "aria-label": label, "aria-pressed": state.activity === id ? "true" : "false"
+      });
       b.addEventListener("click", () => setActivity(id));
       activity.appendChild(b);
     });
@@ -274,8 +386,14 @@
     activity.appendChild(UI.el("button", { class: "vsc-act-btn", title: T("nav.settings"), html: "⚙", onclick: () => App.navigate("settings") }));
     function setActivity(id) {
       state.activity = id;
-      activity.querySelectorAll(".vsc-act-btn").forEach((b, i) => b.classList.toggle("on", ACT[i] && ACT[i][0] === id));
+      activity.querySelectorAll(".vsc-act-btn").forEach((b, i) => {
+        const on = ACT[i] && ACT[i][0] === id;
+        b.classList.toggle("on", !!on);
+        if (ACT[i]) b.setAttribute("aria-pressed", on ? "true" : "false");
+      });
       renderSidebar();
+      const found = ACT.find((a) => a[0] === id);
+      if (found) say(found[2]);
     }
 
     /* ---------------------------------------------------------- sidebar */
@@ -515,7 +633,10 @@
         const full = base + entry.path;
         if (entry.type === "dir") {
           const open = state.openDirs.has(entry.path);
-          const node = UI.el("div", { class: "vsc-tree-item" }, [
+          const node = UI.el("div", {
+            class: "vsc-tree-item", "data-tree-item": "1", "data-path": entry.path,
+            "data-full": full, "data-type": "dir", "data-depth": String(depth), "data-open": open ? "1" : "0"
+          }, [
             UI.el("span", { class: "vsc-caret", text: open ? "▾" : "▸" }),
             window.Icons ? Icons.folder(open) : null,
             UI.el("span", { class: "trunc", text: entry.path.split("/").pop() })
@@ -526,7 +647,11 @@
           fileList.appendChild(node);
           return;
         }
-        const node = UI.el("div", { class: "vsc-tree-item" + (full === state.active ? " on" : "") }, [
+        const node = UI.el("div", {
+          class: "vsc-tree-item" + (full === state.active ? " on" : ""),
+          "data-tree-item": "1", "data-path": entry.path, "data-full": full,
+          "data-type": "file", "data-depth": String(depth)
+        }, [
           window.Icons ? Icons.file(entry.path) : null,
           UI.el("span", { class: "trunc", text: entry.path.split("/").pop() }),
           state.dirty[full] ? UI.el("span", { class: "dotm" }) : null
@@ -538,6 +663,35 @@
         fileList.appendChild(node);
       });
       if (!entries.length) fileList.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ide.emptyWorkspace") }));
+      if (window.A11y) {
+        const keep = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.path : null;
+        A11y.tree(fileList, {
+          label: T("ide.explorer"),
+          expandable: (node) => node.dataset.type === "dir",
+          expanded: (node) => node.dataset.open === "1",
+          onToggle: (node, open) => {
+            if (open) state.openDirs.add(node.dataset.path); else state.openDirs.delete(node.dataset.path);
+            renderTree();
+            const again = fileList.querySelector('[data-path="' + CSS.escape(node.dataset.path) + '"]');
+            if (again) { again.setAttribute("tabindex", "0"); again.focus(); }
+            say(docName(node.dataset.path) + " " + (open ? T("ide.expanded") : T("ide.collapsed")));
+          },
+          onActivate: (node) => {
+            if (node.dataset.type === "dir") {
+              const open = !state.openDirs.has(node.dataset.path);
+              if (open) state.openDirs.add(node.dataset.path); else state.openDirs.delete(node.dataset.path);
+              renderTree();
+              const again = fileList.querySelector('[data-path="' + CSS.escape(node.dataset.path) + '"]');
+              if (again) { again.setAttribute("tabindex", "0"); again.focus(); }
+            } else openFile(node.dataset.full);
+          },
+          labelOf: (node) => docName(node.dataset.path) + (node.dataset.type === "dir" ? ", " + T("ide.folder") : "")
+        });
+        if (keep) {
+          const node = fileList.querySelector('[data-path="' + CSS.escape(keep) + '"]');
+          if (node && fileList.contains(document.activeElement)) { node.setAttribute("tabindex", "0"); node.focus(); }
+        }
+      }
     }
 
     function reloadSource() { if (state.source === "repo") loadRepoTree(); else if (state.source === "storage") loadStorageTree(); else loadTree(); }
@@ -574,16 +728,42 @@
 
     function renderTabs() {
       UI.clear(tabsBar);
+      if (!state.active && state.welcome) {
+        const wtab = UI.el("div", { class: "vsc-tab on", role: "tab", "aria-selected": "true", title: T("ide.welcomeTab") }, [
+          UI.el("span", { "aria-hidden": "true", text: "◈" }),
+          UI.el("span", { text: T("ide.welcomeTab") }),
+          UI.el("button", {
+            class: "vsc-tab-close", "aria-label": t("common.close"), text: "×",
+            onclick: (e) => { e.stopPropagation(); state.welcome = false; localStorage.setItem("ely.ideWelcome", "0"); renderAll(); }
+          })
+        ]);
+        tabsBar.appendChild(wtab);
+      }
       state.tabs.forEach((path) => {
-        const tab = UI.el("div", { class: "vsc-tab" + (path === state.active ? " on" : ""), title: path }, [
+        const tab = UI.el("div", {
+          class: "vsc-tab" + (path === state.active ? " on" : "") + (isUntitled(path) ? " untitled" : ""),
+          title: path, "data-path": path
+        }, [
           window.Icons ? Icons.file(iconPath(path), 14) : null,
-          UI.el("span", { text: path.split("/").pop() }),
-          state.dirty[path] ? UI.el("span", { class: "dotm" }) : null,
-          UI.el("span", { class: "vsc-tab-close", text: "×", onclick: (e) => { e.stopPropagation(); closeTab(path); } })
+          UI.el("span", { text: docName(path) }),
+          state.dirty[path] ? UI.el("span", { class: "dotm", title: T("ide.unsaved") }) : null,
+          UI.el("button", {
+            class: "vsc-tab-close", "aria-label": t("common.close") + " " + docName(path), text: "×",
+            onclick: (e) => { e.stopPropagation(); closeTab(path); }
+          })
         ]);
         tab.addEventListener("click", () => openFile(path));
         tabsBar.appendChild(tab);
       });
+      if (window.A11y) {
+        A11y.tablist(tabsBar, {
+          selector: ".vsc-tab", label: T("ide.openEditors"),
+          onSelect: (node) => { if (node.dataset.path) openFile(node.dataset.path); },
+          onClose: (node) => { if (node.dataset.path) closeTab(node.dataset.path); },
+          labelOf: (node) => (node.dataset.path ? docName(node.dataset.path) : T("ide.welcomeTab")) +
+            (state.dirty[node.dataset.path] ? " · " + T("ide.unsaved") : "")
+        });
+      }
     }
     function closeTab(path) {
       state.tabs = state.tabs.filter((p) => p !== path); delete state.dirty[path];
@@ -641,6 +821,27 @@
       codeTA.addEventListener("keydown", (e) => {
         if (e.key === "Tab") { e.preventDefault(); const s = codeTA.selectionStart; codeTA.setRangeText("  ", s, codeTA.selectionEnd, "end"); codeTA.dispatchEvent(new Event("input")); }
       });
+      /* Pista dentro del editor vacío, como VS Code («select a language…»). */
+      if (state.editorHint && !codeTA.value) {
+        const hint = UI.el("div", { class: "code-hint", "aria-hidden": "true" }, [
+          UI.el("span", { text: T("ide.hintWrite") + " " }),
+          UI.el("button", { class: "code-hint-link", text: T("ide.hintLanguage"), onclick: selectLanguage }),
+          UI.el("span", { text: " (Ctrl+K M). " + T("ide.hintDismiss") + " " }),
+          UI.el("button", {
+            class: "code-hint-link", text: T("ide.hintNever"),
+            onclick: () => { state.editorHint = false; localStorage.setItem("ely.ideEditorHint", "0"); hint.remove(); }
+          })
+        ]);
+        wrap.appendChild(hint);
+        codeTA.addEventListener("input", () => { if (codeTA.value) hint.remove(); }, { once: false });
+      }
+      if (window.A11y) {
+        A11y.editor(codeTA, {
+          label: T("ide.editor") + ": " + docName(state.active) + " · " + langLabel(lang),
+          lang: lang,
+          onPosition: () => updateStatus()
+        });
+      }
       paint(); sync();
     }
 
@@ -653,23 +854,119 @@
       editorPane.appendChild(box);
     }
 
+    /* Bienvenida con el aspecto de VS Code: Start · Recent · Walkthroughs. */
     function renderWelcome() {
-      editorPane.appendChild(UI.el("div", { class: "vsc-welcome" }, [
-        UI.el("div", { class: "vsc-welcome-logo", text: "◈" }),
-        UI.el("h2", { text: "Ely IDE" }),
-        UI.el("p", { class: "muted", text: T("ide.welcome") }),
-        UI.el("div", { class: "vsc-welcome-actions" }, [
-          UI.el("button", { class: "vsc-welcome-btn", text: T("ide.openFolder"), onclick: openFolderFromComputer }),
-          UI.el("button", { class: "vsc-welcome-btn", text: T("ide.openFile"), onclick: openFromComputer }),
-          UI.el("button", { class: "vsc-welcome-btn", text: T("ide.openStorage"), onclick: openStorageModal }),
-          UI.el("button", { class: "vsc-welcome-btn", text: T("ide.newProject"), onclick: createProjectModal })
+      if (!state.welcome) {
+        editorPane.appendChild(UI.el("div", { class: "vsc-welcome-empty" }, [
+          UI.el("div", { class: "vsc-welcome-logo dim", "aria-hidden": "true", text: "◈" }),
+          UI.el("p", { class: "muted", text: T("ide.emptyEditor") }),
+          UI.el("button", { class: "vsc-welcome-btn", text: T("ide.showWelcome"), onclick: () => { state.welcome = true; localStorage.setItem("ely.ideWelcome", "1"); renderEditor(); } })
+        ]));
+        return;
+      }
+      const link = (icon, label, action, hint) => {
+        const b = UI.el("button", { class: "vsc-wl-link", title: hint || label }, [
+          UI.el("span", { class: "vsc-wl-icon", "aria-hidden": "true", text: icon }),
+          UI.el("span", { text: label })
+        ]);
+        b.addEventListener("click", action);
+        return b;
+      };
+      const recents = recentProjects();
+      const start = UI.el("section", { class: "vsc-wl-col", "aria-labelledby": "wl-start" }, [
+        UI.el("h3", { id: "wl-start", text: T("ide.start") }),
+        link("🗋", T("ide.newFile"), newFileQuickPick),
+        link("🗎", T("ide.openFile"), openFromComputer),
+        link("🗀", T("ide.openFolder"), openFolderFromComputer),
+        link("🗄", T("ide.openStorage"), openStorageModal),
+        link("⌘", T("ide.newProject"), createProjectModal)
+      ]);
+      const recent = UI.el("section", { class: "vsc-wl-col", "aria-labelledby": "wl-recent" }, [
+        UI.el("h3", { id: "wl-recent", text: T("ide.recent") })
+      ]);
+      if (recents.length) {
+        recents.slice(0, 6).forEach((p) => recent.appendChild(link("🗀", p, () => openProjectRoot(p))));
+        const clear = UI.el("button", { class: "vsc-wl-clear", text: T("ide.clearRecent") });
+        clear.addEventListener("click", () => { localStorage.setItem("ely.ideRecent", "[]"); renderEditor(); });
+        recent.appendChild(clear);
+      } else {
+        recent.appendChild(UI.el("p", { class: "muted vsc-wl-empty" }, [
+          document.createTextNode(T("ide.noRecentFolders") + " "),
+          UI.el("button", { class: "vsc-wl-inline", text: T("ide.openFolder"), onclick: openFolderFromComputer }),
+          document.createTextNode(" " + T("ide.toStart"))
+        ]));
+      }
+      const walk = UI.el("section", { class: "vsc-wl-col vsc-wl-right", "aria-labelledby": "wl-walk" }, [
+        UI.el("h3", { id: "wl-walk", text: T("ide.walkthroughs") })
+      ]);
+      const card = (icon, title, desc, action) => {
+        const node = UI.el("button", { class: "vsc-wl-card" }, [
+          UI.el("span", { class: "vsc-wl-card-icon", "aria-hidden": "true", text: icon }),
+          UI.el("span", { class: "vsc-wl-card-text" }, [
+            UI.el("b", { text: title }),
+            UI.el("span", { class: "muted", text: desc })
+          ])
+        ]);
+        node.addEventListener("click", action);
+        return node;
+      };
+      walk.appendChild(card("★", T("ide.walkStartTitle"), T("ide.walkStartDesc"), () => walkthrough("start")));
+      walk.appendChild(card("💡", T("ide.walkBasicsTitle"), T("ide.walkBasicsDesc"), () => walkthrough("basics")));
+      walk.appendChild(card("♿", T("ide.walkA11yTitle"), T("ide.walkA11yDesc"), () => { if (window.A11y) A11y.help(); }));
+
+      const show = UI.el("input", { type: "checkbox", id: "wl-show", checked: state.welcome });
+      show.addEventListener("change", () => {
+        state.welcome = show.checked;
+        localStorage.setItem("ely.ideWelcome", show.checked ? "1" : "0");
+      });
+      const footer = UI.el("div", { class: "vsc-wl-footer" }, [
+        UI.el("label", { class: "vsc-wl-check", for: "wl-show" }, [show, UI.el("span", { text: T("ide.showWelcomeOnStartup") })])
+      ]);
+
+      editorPane.appendChild(UI.el("div", { class: "vsc-wl", role: "region", "aria-label": T("ide.welcomeTab") }, [
+        UI.el("div", { class: "vsc-wl-head" }, [
+          UI.el("h2", { text: "Ely IDE" }),
+          UI.el("p", { class: "vsc-wl-tag", text: T("ide.tagline") })
         ]),
-        UI.el("div", { class: "vsc-welcome-keys" }, [
-          UI.el("span", { text: T("ide.terminal") + "  Ctrl+J / Ctrl+Ñ" }),
-          UI.el("span", { text: T("ide.goToFile") + "  Ctrl+P" }),
-          UI.el("span", { text: T("ide.commandPalette") + "  Ctrl+Shift+P" })
-        ])
+        UI.el("div", { class: "vsc-wl-grid" }, [
+          UI.el("div", { class: "vsc-wl-left" }, [start, recent]), walk
+        ]),
+        footer
       ]));
+    }
+
+    /** Guías paso a paso (walkthroughs), como las de VS Code. */
+    function walkthrough(kind) {
+      const steps = kind === "basics" ? [
+        [T("ide.walkB1"), T("ide.walkB1d"), () => { quickOpen(); }],
+        [T("ide.walkB2"), T("ide.walkB2d"), () => { commandPalette(); }],
+        [T("ide.walkB3"), T("ide.walkB3d"), () => { togglePanel("terminal"); }],
+        [T("ide.walkB4"), T("ide.walkB4d"), () => { setActivity("search"); }],
+        [T("ide.walkB5"), T("ide.walkB5d"), () => { setActivity("scm"); }]
+      ] : [
+        [T("ide.walkS1"), T("ide.walkS1d"), () => { openFolderFromComputer(); }],
+        [T("ide.walkS2"), T("ide.walkS2d"), () => { newFileQuickPick(); }],
+        [T("ide.walkS3"), T("ide.walkS3d"), () => { selectLanguage(); }],
+        [T("ide.walkS4"), T("ide.walkS4d"), () => { if (window.A11y) A11y.openSettings(); }],
+        [T("ide.walkS5"), T("ide.walkS5d"), () => { App.navigate("chat"); }]
+      ];
+      const box = UI.el("div", { class: "stack vsc-walk" });
+      steps.forEach(([title, desc, action], i) => {
+        const row = UI.el("div", { class: "vsc-walk-step" }, [
+          UI.el("span", { class: "vsc-walk-num", "aria-hidden": "true", text: String(i + 1) }),
+          UI.el("div", { class: "grow" }, [
+            UI.el("b", { text: title }),
+            UI.el("div", { class: "muted", style: { fontSize: "12px" }, text: desc })
+          ]),
+          UI.btn(T("ide.walkOpen"), () => { ref.close(); action(); }, { small: true })
+        ]);
+        box.appendChild(row);
+      });
+      const ref = UI.modal({
+        title: kind === "basics" ? T("ide.walkBasicsTitle") : T("ide.walkStartTitle"),
+        subtitle: T("ide.walkthroughs"), wide: true, body: box,
+        footer: [UI.btn(t("common.close"), () => ref.close(), { primary: true })]
+      });
     }
 
     /* ---------------------------------------------------------- panel inferior */
@@ -681,15 +978,28 @@
       if (!state.panel.open) return;
       const tabs = UI.el("div", { class: "vsc-panel-tabs" });
       PANEL_TABS.forEach(([id, label]) => {
-        const b = UI.el("button", { class: "vsc-panel-tab" + (state.panel.tab === id ? " on" : ""), text: label });
-        b.addEventListener("click", () => { state.panel.tab = id; renderPanel(); });
+        const b = UI.el("button", {
+          class: "vsc-panel-tab" + (state.panel.tab === id ? " on" : ""), text: label,
+          role: "tab", "data-tab": id, "aria-selected": state.panel.tab === id ? "true" : "false",
+          "aria-controls": "vsc-panel-body"
+        });
+        b.addEventListener("click", () => { state.panel.tab = id; renderPanel(); say(label); });
         tabs.appendChild(b);
       });
       tabs.appendChild(UI.el("div", { style: { flex: "1" } }));
-      tabs.appendChild(UI.el("button", { class: "vsc-panel-x", text: "×", title: T("common.close"), onclick: () => { state.panel.open = false; renderPanel(); } }));
+      tabs.appendChild(UI.el("button", { class: "vsc-panel-x", text: "×", title: T("common.close"), "aria-label": T("common.close"), onclick: () => { state.panel.open = false; renderPanel(); } }));
       panel.appendChild(tabs);
-      const pbody = UI.el("div", { class: "vsc-panel-body" });
+      const pbody = UI.el("div", { class: "vsc-panel-body", id: "vsc-panel-body", role: "tabpanel", "aria-label": (PANEL_TABS.find((p) => p[0] === state.panel.tab) || ["", ""])[1] });
       panel.appendChild(pbody);
+      panel.setAttribute("role", "region");
+      panel.setAttribute("aria-label", T("ide.panel"));
+      if (window.A11y) {
+        A11y.tablist(tabs, {
+          selector: ".vsc-panel-tab", label: T("ide.panel"),
+          onSelect: (node) => { state.panel.tab = node.dataset.tab; renderPanel(); },
+          selected: (node) => node.dataset.tab === state.panel.tab
+        });
+      }
       if (state.panel.tab === "terminal") renderTerminal(pbody);
       else pbody.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ide.panelEmpty") }));
     }
@@ -697,7 +1007,10 @@
     function togglePanel(tab) { if (state.panel.open && (!tab || state.panel.tab === tab)) state.panel.open = false; else { state.panel.open = true; if (tab) state.panel.tab = tab; } renderPanel(); if (state.panel.open && state.panel.tab === "terminal" && termInput) termInput.focus(); }
 
     function renderTerminal(pbody) {
-      termOut = UI.el("div", { class: "vsc-term-out" });
+      termOut = UI.el("div", {
+        class: "vsc-term-out", role: "log", "aria-live": "polite",
+        "aria-label": T("ide.terminalOutput"), tabindex: "0"
+      });
       termOut.appendChild(UI.el("div", { class: "vsc-term-line muted", text: "Ely terminal · " + T("ide.termHint") }));
       const line = UI.el("div", { class: "vsc-term-line" });
       const prompt = UI.el("span", { class: "vsc-term-prompt", text: promptText() });
@@ -724,7 +1037,12 @@
         state.termCwd = r.cwd || "";
         if (r.stdout) termOut.appendChild(UI.el("pre", { class: "vsc-term-pre", text: r.stdout }));
         if (r.stderr) termOut.appendChild(UI.el("pre", { class: "vsc-term-pre err", text: r.stderr }));
-      } catch (e) { termOut.appendChild(UI.el("pre", { class: "vsc-term-pre err", text: e.message })); }
+        const failed = r.exit_code != null && r.exit_code !== 0;
+        sig(failed ? "terminalCommandFailed" : "terminalCommandSucceeded", cmd);
+      } catch (e) {
+        termOut.appendChild(UI.el("pre", { class: "vsc-term-pre err", text: e.message }));
+        sig("terminalCommandFailed", e.message);
+      }
       if (promptEl) promptEl.textContent = promptText();
       termOut.scrollTop = termOut.scrollHeight;
     }
@@ -744,6 +1062,9 @@
         statusbar.appendChild(UI.el("button", { class: "vsc-sb-item vsc-sb-lang", title: T("ide.selectLanguage"), text: "{} " + langLabel(langFor(state.active)), onclick: selectLanguage }));
       }
       statusbar.appendChild(UI.el("span", { class: "vsc-sb-item", text: state.dirty[state.active] ? "●" : "" }));
+      if (window.A11y) statusbar.appendChild(A11y.statusItem());
+      statusbar.setAttribute("role", "status");
+      statusbar.setAttribute("aria-label", T("ide.statusBar"));
     }
     function toggleLayout(key) {
       state.layout[key] = !state.layout[key];
@@ -757,6 +1078,12 @@
     /* ---------------------------------------------------------- abrir/guardar */
     async function openFile(path, force) {
       if (!path) return;
+      if (isUntitled(path)) {
+        state.active = path;
+        if (!state.tabs.includes(path)) state.tabs = [path, ...state.tabs].slice(0, 12);
+        renderTabs(); renderBreadcrumb(); renderEditor(); updateStatus();
+        return;
+      }
       const ext = (path.split(".").pop() || "").toLowerCase();
       state.active = path;
       if (!state.tabs.includes(path)) state.tabs = [path, ...state.tabs].slice(0, 10);
@@ -785,20 +1112,124 @@
 
     async function save() {
       if (!state.active || !codeTA) return;
+      if (isUntitled(state.active)) { saveAs(); return; }
       if (state.source !== "workspace") { UI.toast("warn", T("ide.readOnly")); return; }
       try {
         const result = await API.saveFile(state.active, codeTA.value);
         state.docs[state.active].content = codeTA.value; delete state.dirty[state.active];
         updateStatus(); renderTabs(); renderTree();
         UI.toast("ok", T("ide.saved"), state.active);
-      } catch (err) { UI.toast("err", T("ide.notSaved"), err.message); }
+        sig("save", state.active);
+      } catch (err) { UI.toast("err", T("ide.notSaved"), err.message); sig("taskFailed", err.message); }
     }
     async function saveAll() { for (const p of Object.keys(state.dirty)) { state.active = p; renderEditor(); await save(); } }
     function saveAs() {
       if (!state.active || !codeTA) return;
-      const input = UI.el("input", { type: "text", value: state.active });
-      const ref = UI.modal({ title: T("ide.saveAs"), body: input, footer: [UI.btn(t("common.cancel"), () => ref.close(), { ghost: true }), UI.btn(t("common.save"), async () => { const name = input.value.trim(); if (!name) return; await API.saveFile(name, codeTA.value); ref.close(); UI.toast("ok", T("ide.saved"), name); state.active = null; openFile(name); loadTree(); }, { primary: true })] });
+      const untitled = isUntitled(state.active);
+      const lang = langFor(state.active);
+      const input = UI.el("input", {
+        type: "text", "aria-label": T("ide.fileName"),
+        value: untitled ? docName(state.active).toLowerCase() + "." + langExt(lang) : state.active
+      });
+      const langSel = UI.el("select", { class: "vsc-select", "aria-label": T("ide.language"), style: { width: "100%" } },
+        LANGS.map((l) => UI.el("option", { value: l[0], selected: l[0] === lang, text: l[1] + " (" + l[0] + ")" })));
+      const field = (label, control) => UI.el("label", { class: "stack", style: { gap: "4px" } }, [
+        UI.el("span", { class: "muted", style: { fontSize: "11.5px" }, text: label }), control
+      ]);
+      const ref = UI.modal({
+        title: T("ide.saveAs"),
+        body: UI.el("div", { class: "stack" }, [field(T("ide.fileName"), input), field(T("ide.language"), langSel)]),
+        footer: [
+          UI.btn(t("common.cancel"), () => ref.close(), { ghost: true }),
+          UI.btn(t("common.save"), async () => {
+            let name = input.value.trim(); if (!name) return;
+            if (!name.includes(".")) name += "." + langExt(langSel.value);
+            try {
+              await API.saveFile(name, codeTA.value);
+              const old = state.active;
+              state.langMode[name] = langSel.value;
+              if (untitled) {
+                state.tabs = state.tabs.map((p) => p === old ? name : p);
+                delete state.docs[old]; delete state.dirty[old]; delete state.langMode[old];
+              }
+              delete state.dirty[name];
+              ref.close();
+              UI.toast("ok", T("ide.saved"), name);
+              sig("save", name);
+              state.active = null;
+              await loadTree();
+              openFile(name);
+            } catch (err) { UI.toast("err", T("ide.notSaved"), err.message); }
+          }, { primary: true })
+        ]
+      });
+      setTimeout(() => { input.focus(); input.select(); }, 50);
     }
+    /* «New File…» de VS Code: elegir tipo o escribir un nombre. */
+    function newFileQuickPick() {
+      const favs = ["plaintext", "python", "javascript", "typescript", "html", "css", "json", "markdown", "shell", "sql", "go", "rust", "java", "csharp", "cpp"];
+      const items = [
+        { id: "__text", label: T("ide.textFile"), description: T("ide.builtIn"), keybinding: "Ctrl+N", detail: T("ide.file"),
+          icon: window.Icons ? Icons.file("file.txt", 15) : null },
+        { id: "__notebook", label: T("ide.notebook"), description: T("ide.notebookSupport"), detail: T("ide.soon"), soon: true, disabled: true },
+        { separator: true, label: T("ide.language") }
+      ];
+      favs.forEach((id) => {
+        const l = LANGS.find((x) => x[0] === id);
+        if (!l || id === "plaintext") return;
+        items.push({ id: l[0], label: l[1], description: "(" + l[0] + ")", icon: window.Icons ? Icons.file("file." + l[2], 15) : null });
+      });
+      quickPick({
+        title: T("ide.newFile"),
+        placeholder: T("ide.selectFileType"),
+        items,
+        onEnter: (value, item) => {
+          const name = value.trim();
+          if (!name) return false;
+          /* Con nombre escrito se crea el archivo real en el workspace. */
+          if (item && item.id === name) return false;
+          createNamedFile(name, item && !String(item.id).startsWith("__") ? item.id : null);
+          return true;
+        },
+        onPick: (item) => {
+          if (item.id === "__text") newUntitled("plaintext");
+          else newUntitled(item.id);
+        }
+      });
+    }
+
+    /** Crea un archivo sin guardar (Untitled-N), como VS Code. */
+    function newUntitled(lang) {
+      state.untitledCount += 1;
+      const name = "Untitled-" + state.untitledCount;
+      const path = "untitled:" + name;
+      state.docs[path] = { content: "", lines: 1, untitled: true, name: name };
+      state.langMode[path] = lang || "plaintext";
+      state.dirty[path] = true;
+      state.tabs = [path, ...state.tabs].slice(0, 12);
+      state.active = path;
+      state.welcome = false;
+      renderAll();
+      if (codeTA) codeTA.focus();
+      say(T("ide.untitledCreated") + " " + name + " · " + langLabel(state.langMode[path]));
+    }
+
+    /** Crea un archivo con nombre en el workspace (o sin título si no hay). */
+    async function createNamedFile(name, lang) {
+      const chosen = lang || EXT2LANG[(name.split(".").pop() || "").toLowerCase()] || "plaintext";
+      if (state.source !== "workspace") { newUntitled(chosen); return; }
+      let final = name;
+      if (!final.includes(".")) final += "." + langExt(chosen);
+      try {
+        await API.saveFile(final, "");
+        state.langMode[final] = chosen;
+        state.opened = true;
+        await loadTree();
+        openFile(final);
+        sig("open", final);
+      } catch (err) { UI.toast("err", T("ide.notSaved"), err.message); }
+    }
+
     function newFileModal(ext) {
       const input = UI.el("input", { type: "text", placeholder: "archivo" + (ext || "") });
       const langSel = UI.el("select", { class: "vsc-select", style: { width: "100%" } },
@@ -993,6 +1424,50 @@
 
     function renderAll() { renderTabs(); renderBreadcrumb(); renderEditor(); updateStatus(); renderSidebar(); renderPanel(); }
 
+    /* ---------------------------------------------------------- accesibilidad */
+    if (window.A11y) {
+      activity.setAttribute("role", "toolbar");
+      activity.setAttribute("aria-label", T("ide.activityBar"));
+      activity.setAttribute("aria-orientation", "vertical");
+      A11y.menu(activity, { selector: ".vsc-act-btn", role: "toolbar" });
+      sidebar.setAttribute("role", "complementary");
+      editorArea.setAttribute("role", "region");
+      editorArea.setAttribute("aria-label", T("ide.editor"));
+      editorPane.id = "a11y-editor";
+
+      A11y.registerView("editor-line", {
+        label: T("ide.currentLine"),
+        available: () => !!codeTA,
+        get: () => {
+          const info = A11y.lineInfo(codeTA);
+          return { title: T("ide.currentLine") + " " + info.line, text: info.text || T("ide.emptyLine") };
+        }
+      });
+      A11y.registerView("editor-file", {
+        label: T("ide.wholeFile"),
+        available: () => !!state.active,
+        get: () => ({
+          title: docName(state.active) + " · " + langLabel(langFor(state.active)),
+          text: codeTA ? codeTA.value : ((state.docs[state.active] || {}).content || "")
+        })
+      });
+      A11y.registerView("terminal", {
+        label: T("ide.terminalOutput"),
+        available: () => !!(termOut && termOut.textContent.trim()),
+        get: () => ({ title: T("ide.terminalOutput"), text: termOut.textContent })
+      });
+      A11y.registerView("explorer", {
+        label: T("ide.explorer"),
+        available: () => !!fileList.textContent.trim(),
+        get: () => ({
+          title: T("ide.explorer"),
+          text: Array.from(fileList.querySelectorAll("[data-tree-item]")).map((n) =>
+            "  ".repeat(Number(n.dataset.depth || 0)) + (n.dataset.type === "dir" ? "🗀 " : "") + docName(n.dataset.path)
+          ).join("\n")
+        })
+      });
+    }
+
     /* ---------------------------------------------------------- init + atajos */
     buildMenus();
     renderAll();
@@ -1009,6 +1484,22 @@
       if (mod && k === "o") { e.preventDefault(); openFromComputer(); return; }
       if (mod && k === "g") { e.preventDefault(); goToLine(); return; }
       if (e.altKey && k === "z") { e.preventDefault(); toggleWrap(); return; }
+      if (mod && k === "n" && !e.shiftKey) { e.preventDefault(); newUntitled("plaintext"); return; }
+      if (mod && e.shiftKey && k === "s") { e.preventDefault(); saveAs(); return; }
+      if (mod && k === "i") { e.preventDefault(); if (window.ChatWidget) ChatWidget.open(); else App.navigate("chat"); return; }
+      /* Ctrl+K M · seleccionar modo de lenguaje (acorde de VS Code). */
+      if (mod && k === "k") {
+        e.preventDefault();
+        const once = (ev2) => {
+          document.removeEventListener("keydown", once, true);
+          if (ev2.key.toLowerCase() === "m") { ev2.preventDefault(); selectLanguage(); }
+          if (ev2.key.toLowerCase() === "o") { ev2.preventDefault(); openFolderFromComputer(); }
+        };
+        document.addEventListener("keydown", once, true);
+        setTimeout(() => document.removeEventListener("keydown", once, true), 1600);
+        say(T("ide.chordWaiting"));
+        return;
+      }
     });
 
     return root;
