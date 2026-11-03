@@ -59,7 +59,7 @@
   };
 
   /* Vistas que ocupan la altura completa y no llevan contenedor con relleno. */
-  const FULL_BLEED = { chat: true };
+  const FULL_BLEED = { chat: true, ide: true };
 
   const App = {
     profiles: [],
@@ -376,6 +376,8 @@
       });
       await loadScript("js/i18n.js");
       await loadScript("js/viewer.js");
+      await loadScript("js/icons.js");
+      await loadScript("js/syntax.js");
 
       const side = document.querySelector("aside");
       if (side) {

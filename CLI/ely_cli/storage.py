@@ -186,6 +186,19 @@ class ProfileStorage:
             "content": content, "binary": content is None,
         }
 
+    def save_upload(self, kind: str, name: str, data: bytes) -> dict[str, Any]:
+        folder = self.generated if kind == GENERATED else self.planned if kind == PLANNED else None
+        if folder is None:
+            raise ConfigError("Categoría inválida: usa 'generado' o 'planeado'.")
+        clean = Path(str(name or "")).name
+        if not clean or clean != str(name) or clean in {".", ".."}:
+            raise ConfigError("Nombre de archivo inválido.")
+        if len(data) > 20_000_000:
+            raise ConfigError("Archivo demasiado grande (máx. 20 MB).")
+        target = folder / clean
+        target.write_bytes(data)
+        return {"name": clean, "kind": kind, "size": len(data), "saved": True}
+
     def raw_file(self, kind: str, name: str) -> tuple[bytes, str]:
         import mimetypes
         target = self._resolve(kind, name)

@@ -1,11 +1,12 @@
 /* Vista de chat · diseño tipo Codex (sidebar + hero + composer inferior).
  *
+ * - Cada conversación tiene su propia memoria (se guarda siempre, incluso si
+ *   la respuesta falla) y se puede renombrar / eliminar desde Recientes.
  * - El asistente se muestra como «Ely» (nunca el nombre del modelo/agente).
- * - Cada respuesta muestra al final: tiempo de razonamiento, tiempo total y
- *   la fecha/hora de fin (mes/día/año hora:minuto, según la nacionalidad).
- * - Botón verde «−» arriba a la derecha para minimizar al widget flotante.
- * - Acceso a Local Storage para abrir archivos de distintos formatos.
- * Streaming SSE real contra /api/chat/stream.
+ * - Cada mensaje muestra su hora: el usuario la de envío; Ely razonamiento,
+ *   total y fecha/hora de fin (mes/día/año hora:minuto, según nacionalidad).
+ * - Selector de API (perfil) y de lugar de trabajo (Local Storage).
+ * - Botón «+» con menú de acciones; botón verde «−» para minimizar.
  */
 (function () {
   "use strict";
@@ -17,6 +18,7 @@
     busy: false,
     lastUsage: null,
     profile: null,
+    customTitle: null,
     showAllRecents: false
   };
 
@@ -34,11 +36,12 @@
   async function persist() {
     if (!state.messages.length) return;
     const first = state.messages.find((m) => m.role === "user");
+    const derived = (first ? first.content : t("chat.untitled")).slice(0, 70);
     const session = {
       id: state.sessionId,
       profile: state.profile,
-      title: (first ? first.content : "Conversación").slice(0, 70),
-      messages: state.messages.map((m) => ({ role: m.role, content: m.content, meta: m.meta || null, error: m.error || null })),
+      title: state.customTitle || derived,
+      messages: state.messages.map((m) => ({ role: m.role, content: m.content, meta: m.meta || null, error: m.error || null, sent_at: m.sent_at || null })),
       updated_at: new Date().toISOString()
     };
     try {
@@ -67,14 +70,19 @@
       UI.bindCopy(bubble);
     }
 
-    /* Pie con tiempos y fecha de fin (solo respuestas del asistente). */
-    if (!isUser && msg.meta && (msg.meta.total_ms != null || msg.meta.completed_at)) {
-      const meta = UI.el("div", { class: "chat-meta" }, [
+    if (isUser) {
+      /* Hora a la que el usuario envió el mensaje. */
+      if (msg.sent_at) {
+        body.appendChild(UI.el("div", { class: "chat-meta" }, [
+          UI.el("span", { title: t("chat.sent"), text: "📤 " + t("chat.sent") + ": " + I18N.fmtDateTime(msg.sent_at) })
+        ]));
+      }
+    } else if (msg.meta && (msg.meta.total_ms != null || msg.meta.completed_at)) {
+      body.appendChild(UI.el("div", { class: "chat-meta" }, [
         msg.meta.reasoning_ms != null ? UI.el("span", { title: t("chat.reasoning"), text: "🧠 " + t("chat.reasoning") + ": " + I18N.fmtDuration(msg.meta.reasoning_ms) }) : null,
         msg.meta.total_ms != null ? UI.el("span", { title: t("chat.total"), text: "⏱ " + t("chat.total") + ": " + I18N.fmtDuration(msg.meta.total_ms) }) : null,
         msg.meta.completed_at ? UI.el("span", { title: t("chat.completed"), text: "📅 " + I18N.fmtDateTime(msg.meta.completed_at) }) : null
-      ]);
-      body.appendChild(meta);
+      ]));
     }
 
     const avatar = UI.el("div", { class: "avatar", text: isUser ? "TÚ" : "◈" });
@@ -86,25 +94,24 @@
   window.Views.chat = function (view, App) {
     const profile = App.profile();
 
-    /* Cada perfil tiene su propia conversación. */
     const currentProfile = App.profileId();
     if (state.profile !== currentProfile) {
       state.profile = currentProfile;
       state.messages = [];
       state.sessionId = newId();
       state.sessions = [];
+      state.customTitle = null;
       state.lastUsage = null;
     }
 
-    /* Conversación que llega desde el widget al expandir. */
     if (window.__elyWidgetHandoff) {
       state.messages = window.__elyWidgetHandoff.messages || [];
       state.sessionId = window.__elyWidgetHandoff.sessionId || newId();
+      state.customTitle = null;
       window.__elyWidgetHandoff = null;
     }
     if (!state.sessionId) state.sessionId = newId();
 
-    /* ------------------------------------------------------------ estructura */
     const shell = UI.el("div", { class: "chat-shell" });
     const sidebar = UI.el("div", { class: "chat-sidebar" });
     const main = UI.el("div", { class: "chat-main" });
@@ -118,7 +125,7 @@
       UI.el("span", { class: "muted", text: "⌄" }),
       UI.el("div", { style: { flex: "1" } }),
       UI.el("button", { class: "icon-btn", html: "⌕", title: t("chat.recents") }),
-      UI.el("button", { class: "icon-btn", html: "◧", title: "Local Storage", onclick: () => App.navigate("storage") })
+      UI.el("button", { class: "icon-btn", html: "◧", title: t("chat.openStorage"), onclick: () => App.navigate("storage") })
     ]));
 
     const newBtn = UI.el("button", { class: "cs-new" }, [
@@ -128,6 +135,7 @@
       if (state.busy) return;
       state.messages = [];
       state.sessionId = newId();
+      state.customTitle = null;
       state.lastUsage = null;
       renderContent();
       renderRecents();
@@ -150,6 +158,44 @@
     const projectsList = UI.el("div", { class: "cs-list" });
     sidebar.appendChild(projectsList);
 
+    /* ---- renombrar / eliminar conversación ---- */
+    function renameSession(session) {
+      const input = UI.el("input", { type: "text", value: session.title || "", maxlength: "70" });
+      const ref = UI.modal({
+        title: t("chat.rename"),
+        body: UI.el("div", { class: "stack" }, [input]),
+        footer: [
+          UI.btn(t("common.cancel"), () => ref.close(), { ghost: true }),
+          UI.btn(t("common.save"), async () => {
+            const title = input.value.trim();
+            if (!title) return;
+            if (session.id === state.sessionId) state.customTitle = title;
+            try {
+              await API.saveSession(Object.assign({}, session, { title, profile: state.profile }));
+              state.sessions = (await API.sessions(state.profile)).sessions || [];
+              UI.toast("ok", t("chat.renamed"));
+            } catch (e) { UI.toast("err", t("ls.deleteFail"), e.message); }
+            ref.close();
+            renderRecents();
+          }, { primary: true })
+        ]
+      });
+      setTimeout(() => { input.focus(); input.select(); }, 60);
+    }
+
+    async function deleteSession(session) {
+      await API.deleteSession(session.id, state.profile).catch(() => {});
+      state.sessions = state.sessions.filter((s) => s.id !== session.id);
+      if (session.id === state.sessionId) {
+        state.messages = [];
+        state.sessionId = newId();
+        state.customTitle = null;
+        renderContent();
+      }
+      renderRecents();
+      UI.toast("ok", t("ls.convDeleted"));
+    }
+
     function renderRecents() {
       UI.clear(recentsList);
       if (!state.sessions.length) {
@@ -163,13 +209,21 @@
         const active = session.id === state.sessionId;
         const item = UI.el("div", { class: "cs-item" + (active ? " on" : ""), title: session.title }, [
           UI.el("span", { class: "trunc", text: session.title || t("chat.untitled") }),
-          UI.el("span", { class: "cs-tag", text: (session.messages || []).length + " " + t("chat.msgs") }),
-          active ? UI.el("span", { class: "cs-dot" }) : null
+          active ? UI.el("span", { class: "cs-dot" }) : null,
+          UI.el("button", {
+            class: "icon-btn cs-act", html: "✎", title: t("chat.rename"),
+            onclick: (e) => { e.stopPropagation(); renameSession(session); }
+          }),
+          UI.el("button", {
+            class: "icon-btn cs-act", html: "✕", title: t("chat.delete"),
+            onclick: (e) => { e.stopPropagation(); deleteSession(session); }
+          })
         ]);
         item.addEventListener("click", () => {
           if (state.busy) return;
           state.sessionId = session.id;
-          state.messages = (session.messages || []).map((m) => ({ role: m.role, content: m.content, meta: m.meta, error: m.error }));
+          state.customTitle = session.title || null;
+          state.messages = (session.messages || []).map((m) => ({ role: m.role, content: m.content, meta: m.meta, error: m.error, sent_at: m.sent_at }));
           renderContent();
           renderRecents();
         });
@@ -215,25 +269,38 @@
     const content = UI.el("div", { class: "chat-content" });
     main.appendChild(content);
 
-    /* composer */
+    /* ---------------------------------------------------------- composer */
     const composer = UI.el("div", { class: "chat-composer" });
     const ctxRow = UI.el("div", { class: "cc-context" });
-    const profileSelect = UI.el("select", {
-      class: "cc-select",
+
+    /* Selector de API (perfil). */
+    const apiSelect = UI.el("select", {
+      class: "cc-select", title: t("chat.api"),
       onchange: (e) => App.setProfile(e.target.value)
     }, (App.profiles || []).map((p) => UI.el("option", { value: p.id, selected: p.id === currentProfile, text: p.label })));
-    ctxRow.appendChild(UI.el("span", { class: "cc-ctx" }, [UI.el("span", { text: "◈" }), profileSelect]));
-    ctxRow.appendChild(UI.el("button", {
-      class: "cc-ctx cc-folder-btn", title: t("chat.openStorage"),
-      onclick: () => FileViewer.browseStorage(state.profile)
-    }, [UI.el("span", { text: "🗀" }), UI.el("span", { text: t("chat.openStorage") }), UI.el("span", { class: "muted", text: "⌄" })]));
+    ctxRow.appendChild(UI.el("span", { class: "cc-ctx" }, [
+      UI.el("span", { text: "◈" }),
+      UI.el("span", { class: "cc-ctx-label", text: t("chat.api") }),
+      apiSelect
+    ]));
+
+    /* Lugar de trabajo (por ahora solo Local Storage). */
+    const workSelect = UI.el("select", {
+      class: "cc-select", title: t("chat.workLocation"),
+      onchange: (e) => { if (window.Settings) Settings.set({ workLocation: e.target.value }); }
+    }, [
+      UI.el("option", { value: "local", selected: true, text: t("chat.openStorage") })
+    ]);
+    ctxRow.appendChild(UI.el("span", { class: "cc-ctx" }, [
+      UI.el("span", { text: "🗀" }), workSelect, UI.el("span", { class: "muted", text: "⌄" })
+    ]));
     composer.appendChild(ctxRow);
 
     const textarea = UI.el("textarea", { class: "cc-input", rows: 1, placeholder: t("chat.doAnything") });
     composer.appendChild(textarea);
 
     const bottomRow = UI.el("div", { class: "cc-bottom" });
-    const attachBtn = UI.el("button", { class: "cc-plus", html: "＋", title: t("chat.attach"), onclick: () => FileViewer.browseStorage(state.profile) });
+    const attachBtn = UI.el("button", { class: "cc-plus", html: "＋", title: t("chat.attach") });
     const stopBtn = UI.el("button", { class: "cc-stop", text: t("chat.stop"), hidden: true, onclick: () => { state.abort = true; } });
     const micBtn = UI.el("button", { class: "cc-mic", html: "🎤", title: "—", disabled: true });
     const sendBtn = UI.el("button", { class: "cc-send", html: "↑", title: t("chat.send"), onclick: () => send() });
@@ -243,6 +310,69 @@
     bottomRow.appendChild(micBtn);
     bottomRow.appendChild(sendBtn);
     composer.appendChild(bottomRow);
+
+    /* ---- menú del botón «+» ---- */
+    const plusMenu = buildPlusMenu();
+    composer.appendChild(plusMenu);
+    attachBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      plusMenu.classList.toggle("open");
+    });
+    document.addEventListener("pointerdown", (e) => {
+      if (plusMenu.classList.contains("open") && !plusMenu.contains(e.target) && e.target !== attachBtn) {
+        plusMenu.classList.remove("open");
+      }
+    });
+
+    function plusItem(icon, title, desc, action) {
+      const node = UI.el("button", { class: "cc-menu-item" }, [
+        UI.el("span", { class: "cc-menu-icon", text: icon }),
+        UI.el("span", { class: "cc-menu-text" }, [
+          UI.el("b", { text: title }),
+          UI.el("span", { class: "muted", text: desc })
+        ])
+      ]);
+      node.addEventListener("click", () => { plusMenu.classList.remove("open"); action(); });
+      return node;
+    }
+
+    function buildPlusMenu() {
+      const menu = UI.el("div", { class: "cc-plusmenu" });
+      const soon = () => UI.toast("warn", t("chat.soon"), t("chat.soonBody"));
+      menu.appendChild(plusItem("📎", t("chat.menu.upload"), t("chat.menu.uploadDesc"), uploadFromComputer));
+      menu.appendChild(plusItem("🗂", t("chat.menu.library"), t("chat.menu.libraryDesc"), () => FileViewer.browseStorage(state.profile)));
+      menu.appendChild(plusItem("🖼", t("chat.menu.image"), t("chat.menu.imageDesc"), soon));
+      menu.appendChild(plusItem("🌐", t("chat.menu.internet"), t("chat.menu.internetDesc"), soon));
+      menu.appendChild(plusItem("🗀", t("chat.menu.project"), t("chat.menu.projectDesc"), () => App.navigate("ide")));
+      menu.appendChild(plusItem("🔎", t("chat.menu.research"), t("chat.menu.researchDesc"), () => { textarea.value = t("chat.menu.research") + ": "; textarea.focus(); }));
+      menu.appendChild(plusItem("✏", t("chat.menu.draw"), t("chat.menu.drawDesc"), soon));
+      menu.appendChild(plusItem("🧠", t("chat.menu.reasoning"), t("chat.menu.reasoningDesc"), () => { textarea.value = t("chat.menu.reasoning") + ": "; textarea.focus(); }));
+      menu.appendChild(plusItem("⚙", t("chat.menu.platform"), t("chat.menu.platformDesc"), () => App.navigate("integrations")));
+      return menu;
+    }
+
+    function uploadFromComputer() {
+      const input = UI.el("input", { type: "file", multiple: true, style: { display: "none" } });
+      document.body.appendChild(input);
+      input.addEventListener("change", async () => {
+        const files = Array.from(input.files || []);
+        for (const file of files) {
+          try {
+            const b64 = await new Promise((res, rej) => {
+              const r = new FileReader();
+              r.onload = () => res(String(r.result).split(",")[1] || "");
+              r.onerror = rej;
+              r.readAsDataURL(file);
+            });
+            await API.uploadStorage({ profile: state.profile, kind: "generado", name: file.name, content_b64: b64 });
+            UI.toast("ok", t("chat.uploaded"), file.name);
+          } catch (e) { UI.toast("err", t("ls.addFail"), e.message); }
+        }
+        input.remove();
+      });
+      input.click();
+    }
+
     main.appendChild(composer);
 
     textarea.addEventListener("keydown", (event) => {
@@ -262,12 +392,11 @@
           UI.el("div", { class: "ch-logo", text: "◈" }),
           UI.el("h2", { class: "ch-title", text: t("chat.whatBuild") })
         ]);
-        const sugs = UI.el("div", { class: "ch-sugs" }, [
+        hero.appendChild(UI.el("div", { class: "ch-sugs" }, [
           suggestion("✉", t("chat.sug1"), () => { textarea.value = t("chat.sug1"); textarea.focus(); }),
           suggestion("🗀", t("chat.sug2"), () => FileViewer.browseStorage(state.profile)),
           suggestion("⌘", t("chat.sug3"), () => { textarea.value = t("chat.sug3"); textarea.focus(); })
-        ]);
-        hero.appendChild(sugs);
+        ]));
         content.appendChild(hero);
         return;
       }
@@ -302,11 +431,12 @@
       textarea.value = "";
       textarea.style.height = "auto";
 
-      const userMsg = { role: "user", content: text };
+      const userMsg = { role: "user", content: text, sent_at: new Date().toISOString() };
       state.messages.push(userMsg);
-      renderContent();              // muestra el log con el mensaje del usuario
+      renderContent();
       const log = logEl();
       const history = conversationForApi().slice(0, -1);
+      persist();  // guarda la conversación aunque la respuesta falle (memoria)
 
       const t0 = performance.now();
       const assistantMsg = { role: "assistant", content: "", meta: {} };
@@ -374,7 +504,7 @@
         state.busy = false;
         sendBtn.disabled = false;
         stopBtn.hidden = true;
-        if (acc) await persist();
+        await persist();
         renderRecents();
         textarea.focus();
       }

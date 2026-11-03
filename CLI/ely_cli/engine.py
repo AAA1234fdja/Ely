@@ -333,6 +333,17 @@ class Engine:
     def storage_samples(self, profile_id: str | None = None) -> list[str]:
         return self._storage(profile_id).ensure_samples()
 
+    def storage_upload(self, kind: str, name: str, data: bytes, profile_id: str | None = None) -> dict[str, Any]:
+        return self._storage(profile_id).save_upload(kind, name, data)
+
+    def create_project(self, name: str, template: str = "blank") -> dict[str, Any]:
+        from . import workspace
+        return workspace.create_project(self.root, name, template)
+
+    def search_workspace(self, query: str) -> dict[str, Any]:
+        from . import workspace
+        return workspace.search(self.root, query)
+
     # ------------------------------------------------------------------ memoria
     def memories(self) -> list[dict[str, Any]]:
         return self._read_json("memory.json", [])

@@ -407,6 +407,37 @@ class LocalStorageTest(unittest.TestCase):
         with self.assertRaises(ConfigError):
             self.engine.storage_read_file("generado", "no-existe.txt", "alpha")
 
+    def test_storage_upload(self):
+        from ely_cli.config import ConfigError
+        result = self.engine.storage_upload("generado", "foto.png", b"\x89PNG\r\n", "alpha")
+        self.assertTrue(result["saved"])
+        self.assertEqual(result["size"], 6)
+        saved = (self.tmp / "Local Storage" / "alpha" / "generado" / "foto.png").read_bytes()
+        self.assertEqual(saved, b"\x89PNG\r\n")
+        with self.assertRaises(ConfigError):
+            self.engine.storage_upload("generado", "../evil.txt", b"x", "alpha")
+
+    def test_create_project(self):
+        from ely_cli.workspace import WorkspaceError
+        result = self.engine.create_project("demo", "web")
+        self.assertTrue(result["created"])
+        self.assertIn("index.html", result["files"])
+        self.assertTrue((self.tmp / "demo" / "index.html").exists())
+        self.assertTrue((self.tmp / "demo" / "README.md").exists())
+        with self.assertRaises(WorkspaceError):
+            self.engine.create_project("demo", "web")  # ya existe
+
+    def test_workspace_search(self):
+        from ely_cli.workspace import WorkspaceError
+        (self.tmp / "src").mkdir()
+        (self.tmp / "src" / "app.py").write_text("def hola_mundo():\n    return 42\n", encoding="utf-8")
+        result = self.engine.search_workspace("hola_mundo")
+        self.assertEqual(len(result["matches"]), 1)
+        self.assertEqual(result["matches"][0]["path"], "src/app.py")
+        self.assertEqual(result["matches"][0]["line"], 1)
+        with self.assertRaises(WorkspaceError):
+            self.engine.search_workspace("x")  # menos de 2 caracteres
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

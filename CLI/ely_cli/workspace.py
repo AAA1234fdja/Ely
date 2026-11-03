@@ -128,6 +128,71 @@ def write_file(root: Path, rel: str, content: str) -> dict[str, Any]:
     return {"path": rel, "size": target.stat().st_size, "created": not existed, "saved": True}
 
 
+def create_project(root: Path, name: str, template: str = "blank") -> dict[str, Any]:
+    """Crea una carpeta de proyecto con archivos iniciales en el workspace."""
+    import re as _re
+    clean = _re.sub(r"[^A-Za-z0-9._-]", "-", str(name or "").strip()).strip("-.")
+    if not clean:
+        raise WorkspaceError(400, "Nombre de proyecto inválido")
+    target = _safe(root, clean)
+    if target.exists():
+        raise WorkspaceError(409, f"Ya existe: {clean}")
+    target.mkdir(parents=True)
+    files: dict[str, str] = {
+        "README.md": f"# {clean}\n\nProyecto creado desde Ely Cowork.\n",
+    }
+    if template == "web":
+        files["index.html"] = (
+            "<!doctype html>\n<html lang=\"es\">\n<head>\n<meta charset=\"utf-8\">\n"
+            f"<title>{clean}</title>\n<link rel=\"stylesheet\" href=\"style.css\">\n</head>\n"
+            f"<body>\n<h1>{clean}</h1>\n<p>Hola desde Ely.</p>\n<script src=\"main.js\"></script>\n</body>\n</html>\n"
+        )
+        files["style.css"] = "body{font-family:system-ui,sans-serif;margin:2rem;}\n"
+        files["main.js"] = "console.log(\"Hola desde " + clean + "\");\n"
+    elif template == "python":
+        files["main.py"] = "def main():\n    print(\"Hola desde " + clean + "\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+    elif template == "node":
+        files["package.json"] = "{\n  \"name\": \"" + clean + "\",\n  \"version\": \"0.1.0\",\n  \"main\": \"index.js\"\n}\n"
+        files["index.js"] = "console.log(\"Hola desde " + clean + "\");\n"
+    for rel, content in files.items():
+        (target / rel).write_text(content, encoding="utf-8")
+    return {"path": clean, "files": list(files), "created": True}
+
+
+def search(root: Path, query: str, limit: int = 200) -> dict[str, Any]:
+    """Búsqueda de texto en los archivos del workspace (case-insensitive)."""
+    q = str(query or "").strip()
+    if len(q) < 2:
+        raise WorkspaceError(400, "Escribe al menos 2 caracteres")
+    needle = q.lower()
+    matches: list[dict[str, Any]] = []
+    scanned = 0
+    for path in sorted(root.rglob("*")):
+        if len(matches) >= limit:
+            break
+        if not path.is_file():
+            continue
+        rel_parts = path.relative_to(root).parts
+        if any(p in SKIP_DIRS or p.startswith(".") for p in rel_parts[:-1]):
+            continue
+        if path.suffix.lower() not in TEXT_EXT:
+            continue
+        try:
+            if path.stat().st_size > MAX_FILE:
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        scanned += 1
+        rel = str(path.relative_to(root))
+        for i, line in enumerate(text.splitlines(), 1):
+            if needle in line.lower():
+                matches.append({"path": rel, "line": i, "text": line.strip()[:200]})
+                if len(matches) >= limit:
+                    break
+    return {"query": q, "matches": matches, "scanned": scanned, "truncated": len(matches) >= limit}
+
+
 def assets(root: Path) -> dict[str, Any]:
     """Inventario real del repositorio agrupado por carpeta de primer nivel."""
     groups: dict[str, dict[str, Any]] = {}

@@ -336,6 +336,17 @@ class ElyHandler(BaseHTTPRequestHandler):
             body = self.read_json()
             return self.json({"created": engine.storage_samples(body.get("profile"))})
 
+        if method == "POST" and route == "/storage/upload":
+            import base64
+            body = self.read_json()
+            try:
+                data = base64.b64decode(body.get("content_b64") or "")
+            except Exception as exc:
+                raise ApiError(400, "content_b64 inválido") from exc
+            return self.json(engine.storage_upload(
+                body.get("kind", "generado"), body.get("name", ""), data, body.get("profile")
+            ))
+
         if method == "GET" and route == "/memory":
             return self.json({"memories": engine.memories()})
 
@@ -380,6 +391,22 @@ class ElyHandler(BaseHTTPRequestHandler):
             except workspace.WorkspaceError as exc:
                 raise ApiError(exc.status, str(exc)) from exc
             return self._send(200, data, ctype)
+
+        if method == "POST" and route == "/workspace/project":
+            body = self.read_json()
+            try:
+                return self.json(engine.create_project(
+                    str(body.get("name") or ""), str(body.get("template") or "blank")
+                ))
+            except workspace.WorkspaceError as exc:
+                raise ApiError(exc.status, str(exc)) from exc
+
+        if method == "GET" and route == "/workspace/search":
+            q = self.query()
+            try:
+                return self.json(engine.search_workspace(q.get("q", "")))
+            except workspace.WorkspaceError as exc:
+                raise ApiError(exc.status, str(exc)) from exc
 
         if method == "GET" and route == "/assets":
             return self.json(workspace.assets(engine.root))

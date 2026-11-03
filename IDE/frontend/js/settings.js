@@ -10,6 +10,7 @@
     defaults: {
       language: "es",           // es | en (idioma de la interfaz)
       nationality: "CO",        // nacionalidad → zona horaria de las horas
+      workLocation: "local",    // lugar de trabajo principal (local = Local Storage)
       density: "comfortable",   // comfortable | compact
       stream: true,             // streaming SSE en el chat
       sendOnEnter: true,
@@ -41,6 +42,10 @@
       } catch (e) { /* almacenamiento bloqueado */ }
       this.apply();
       Store.set({});  // notifica a los suscriptores
+      if (patch.language && window.I18N) {
+        window.dispatchEvent(new Event("ely:langchange"));
+        if (I18N.apply) I18N.apply(document.body);
+      }
       return next;
     },
 
