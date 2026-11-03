@@ -346,6 +346,9 @@
     "ide.tSelectWord": ["Seleccionar palabra", "Select word"],
     "ide.tSelectLine": ["Seleccionar línea", "Select line"],
     "ide.tTranspose": ["Transponer caracteres", "Transpose characters"],
+    "ide.fileName": ["Nombre del archivo", "File name"],
+    "ide.language": ["Lenguaje", "Language"],
+    "ide.selectLanguage": ["Seleccionar modo de lenguaje", "Select Language Mode"],
 
     // --- común
     "common.refresh": ["Recargar", "Refresh"],

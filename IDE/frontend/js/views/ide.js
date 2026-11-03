@@ -19,6 +19,28 @@
   const PREVIEW = ["pdf", "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg"];
   const enc = encodeURIComponent;
 
+  /* Catálogo de lenguajes (como el selector de modo de lenguaje de VS Code). */
+  const LANGS = [
+    ["plaintext", "Plain Text", "txt"], ["javascript", "JavaScript", "js"], ["typescript", "TypeScript", "ts"],
+    ["jsx", "JavaScript JSX", "jsx"], ["tsx", "TypeScript JSX", "tsx"], ["python", "Python", "py"],
+    ["html", "HTML", "html"], ["css", "CSS", "css"], ["scss", "SCSS", "scss"], ["json", "JSON", "json"],
+    ["markdown", "Markdown", "md"], ["yaml", "YAML", "yml"], ["xml", "XML", "xml"], ["svg", "SVG", "svg"],
+    ["sql", "SQL", "sql"], ["shell", "Shell Script", "sh"], ["rust", "Rust", "rs"], ["go", "Go", "go"],
+    ["java", "Java", "java"], ["c", "C", "c"], ["cpp", "C++", "cpp"], ["csharp", "C#", "cs"],
+    ["php", "PHP", "php"], ["ruby", "Ruby", "rb"], ["toml", "TOML", "toml"], ["ini", "Ini", "ini"],
+    ["dockerfile", "Dockerfile", "dockerfile"], ["csv", "CSV", "csv"], ["latex", "LaTeX", "tex"],
+    ["perl", "Perl", "pl"], ["swift", "Swift", "swift"], ["kotlin", "Kotlin", "kt"], ["lua", "Lua", "lua"],
+    ["r", "R", "r"], ["dart", "Dart", "dart"], ["powershell", "PowerShell", "ps1"], ["bat", "Batch", "bat"],
+    ["makefile", "Makefile", "mk"], ["graphql", "GraphQL", "graphql"], ["vue", "Vue", "vue"], ["svelte", "Svelte", "svelte"]
+  ];
+  const EXT2LANG = { txt: "plaintext", js: "javascript", mjs: "javascript", cjs: "javascript", ts: "typescript",
+    jsx: "jsx", tsx: "tsx", py: "python", html: "html", htm: "html", css: "css", scss: "scss", json: "json",
+    md: "markdown", yml: "yaml", yaml: "yaml", xml: "xml", svg: "svg", sql: "sql", sh: "shell", bash: "shell",
+    rs: "rust", go: "go", java: "java", c: "c", h: "c", cpp: "cpp", cc: "cpp", cs: "csharp", php: "php", rb: "ruby",
+    toml: "toml", ini: "ini", cfg: "ini", dockerfile: "dockerfile", csv: "csv", tex: "latex", pl: "perl",
+    swift: "swift", kt: "kotlin", lua: "lua", r: "r", dart: "dart", ps1: "powershell", bat: "bat", mk: "makefile",
+    graphql: "graphql", vue: "vue", svelte: "svelte" };
+
   window.Views.ide = function (view, App) {
     const T = (k) => t(k);
     const state = {
@@ -30,11 +52,47 @@
       activity: "explorer", opened: false, projectRoot: null,
       openDirs: new Set(),
       sort: "name", hidden: false,
+      langMode: {},
       panel: { open: false, tab: "terminal" },
       layout: { menubar: true, activity: true, sidebar: true, status: true },
       wordWrap: false, termCwd: "", history: [], histIdx: 0
     };
     const soon = () => UI.toast("warn", T("ide.soon"), T("ide.soonBody"));
+
+    /* ---- modo de lenguaje (como VS Code) ---- */
+    function langFor(path) {
+      if (state.langMode[path]) return state.langMode[path];
+      const base = (path || "").split("/").pop().toLowerCase();
+      if (base === "dockerfile") return "dockerfile";
+      if (base === "makefile") return "makefile";
+      const ext = base.includes(".") ? base.split(".").pop() : "";
+      return EXT2LANG[ext] || "plaintext";
+    }
+    function langLabel(id) { const l = LANGS.find((x) => x[0] === id); return l ? l[1] : id; }
+    function langExt(id) { const l = LANGS.find((x) => x[0] === id); return l ? l[2] : "txt"; }
+    function iconPath(path) { return state.langMode[path] ? "file." + langExt(state.langMode[path]) : path; }
+
+    /* Selector de modo de lenguaje del archivo activo (clic en la barra de estado). */
+    function selectLanguage() {
+      if (!state.active) { UI.toast("warn", T("ide.openFirst")); return; }
+      const input = UI.el("input", { class: "vsc-search-input", placeholder: T("ide.selectLanguage") });
+      const list = UI.el("div", { class: "vsc-tree", style: { maxHeight: "320px" } });
+      const draw = (q) => {
+        UI.clear(list);
+        LANGS.filter((l) => (l[0] + l[1]).toLowerCase().includes(q.toLowerCase())).forEach((l) => {
+          const n = UI.el("div", { class: "vsc-tree-item" + (langFor(state.active) === l[0] ? " on" : "") }, [
+            window.Icons ? Icons.file("file." + l[2], 14) : null,
+            UI.el("span", { text: l[1] }),
+            UI.el("span", { class: "muted", style: { marginLeft: "auto", fontSize: "10px" }, text: "." + l[2] })
+          ]);
+          n.addEventListener("click", () => { state.langMode[state.active] = l[0]; ref.close(); renderEditor(); updateStatus(); renderTabs(); });
+          list.appendChild(n);
+        });
+      };
+      input.addEventListener("input", () => draw(input.value));
+      const ref = UI.modal({ title: T("ide.selectLanguage"), body: UI.el("div", { class: "stack" }, [input, list]) });
+      draw(""); setTimeout(() => input.focus(), 50);
+    }
 
     /* ---------------------------------------------------------- layout */
     const root = UI.el("div", { class: "vsc" });
@@ -518,7 +576,7 @@
       UI.clear(tabsBar);
       state.tabs.forEach((path) => {
         const tab = UI.el("div", { class: "vsc-tab" + (path === state.active ? " on" : ""), title: path }, [
-          window.Icons ? Icons.file(path, 14) : null,
+          window.Icons ? Icons.file(iconPath(path), 14) : null,
           UI.el("span", { text: path.split("/").pop() }),
           state.dirty[path] ? UI.el("span", { class: "dotm" }) : null,
           UI.el("span", { class: "vsc-tab-close", text: "×", onclick: (e) => { e.stopPropagation(); closeTab(path); } })
@@ -556,6 +614,7 @@
       if (!state.active) { renderWelcome(); return; }
       const ext = (state.active.split(".").pop() || "").toLowerCase();
       if (PREVIEW.includes(ext)) { renderPreview(ext); return; }
+      const lang = langFor(state.active);
       const doc = state.docs[state.active];
       const wrap = UI.el("div", { class: "code-wrap" + (state.wordWrap ? " wrap" : "") });
       const gutter = UI.el("div", { class: "code-gutter" });
@@ -570,7 +629,7 @@
       editorPane.appendChild(wrap);
       function paint() {
         const text = codeTA.value;
-        codeHL.innerHTML = (window.Syntax ? Syntax.highlight(text, ext) : text.replace(/&/g, "&amp;").replace(/</g, "&lt;")) + "\n";
+        codeHL.innerHTML = (window.Syntax ? Syntax.highlight(text, lang) : text.replace(/&/g, "&amp;").replace(/</g, "&lt;")) + "\n";
         gutterInner.textContent = Array.from({ length: text.split("\n").length }, (_, i) => i + 1).join("\n");
       }
       function sync() {
@@ -682,7 +741,7 @@
         statusbar.appendChild(UI.el("span", { class: "vsc-sb-item", text: "Ln " + (doc.lines || 1) + ", Col 1" }));
         statusbar.appendChild(UI.el("span", { class: "vsc-sb-item", text: T("ide.spaces") + ": 2" }));
         statusbar.appendChild(UI.el("span", { class: "vsc-sb-item", text: "UTF-8" }));
-        statusbar.appendChild(UI.el("span", { class: "vsc-sb-item", text: "{} " + (LANG[ext] || ext || "text") }));
+        statusbar.appendChild(UI.el("button", { class: "vsc-sb-item vsc-sb-lang", title: T("ide.selectLanguage"), text: "{} " + langLabel(langFor(state.active)), onclick: selectLanguage }));
       }
       statusbar.appendChild(UI.el("span", { class: "vsc-sb-item", text: state.dirty[state.active] ? "●" : "" }));
     }
@@ -741,8 +800,29 @@
       const ref = UI.modal({ title: T("ide.saveAs"), body: input, footer: [UI.btn(t("common.cancel"), () => ref.close(), { ghost: true }), UI.btn(t("common.save"), async () => { const name = input.value.trim(); if (!name) return; await API.saveFile(name, codeTA.value); ref.close(); UI.toast("ok", T("ide.saved"), name); state.active = null; openFile(name); loadTree(); }, { primary: true })] });
     }
     function newFileModal(ext) {
-      const input = UI.el("input", { type: "text", placeholder: "archivo" + ext });
-      const ref = UI.modal({ title: T("ide.newFile"), body: input, footer: [UI.btn(t("common.cancel"), () => ref.close(), { ghost: true }), UI.btn(T("ide.create"), async () => { let name = input.value.trim(); if (!name) return; if (ext && !name.includes(".")) name += ext; await API.saveFile(name, ""); ref.close(); state.opened = true; state.source = "workspace"; await loadTree(); openFile(name); }, { primary: true })] });
+      const input = UI.el("input", { type: "text", placeholder: "archivo" + (ext || "") });
+      const langSel = UI.el("select", { class: "vsc-select", style: { width: "100%" } },
+        LANGS.map((l) => UI.el("option", { value: l[0], text: l[1] + " (." + l[2] + ")" })));
+      langSel.value = ext ? (EXT2LANG[ext.replace(".", "")] || "plaintext") : "plaintext";
+      const field = (label, control) => UI.el("label", { class: "stack", style: { gap: "4px" } }, [
+        UI.el("span", { class: "muted", style: { fontSize: "11.5px" }, text: label }), control
+      ]);
+      const ref = UI.modal({
+        title: T("ide.newFile"),
+        body: UI.el("div", { class: "stack" }, [field(T("ide.fileName"), input), field(T("ide.language"), langSel)]),
+        footer: [
+          UI.btn(t("common.cancel"), () => ref.close(), { ghost: true }),
+          UI.btn(T("ide.create"), async () => {
+            let name = input.value.trim(); if (!name) return;
+            const lang = langSel.value;
+            if (!name.includes(".")) name += "." + langExt(lang);
+            await API.saveFile(name, "");
+            state.langMode[name] = lang;
+            ref.close(); state.opened = true; state.source = "workspace";
+            await loadTree(); openFile(name);
+          }, { primary: true })
+        ]
+      });
       setTimeout(() => input.focus(), 50);
     }
 
@@ -829,7 +909,7 @@
         [T("ide.openFolder"), openFolderFromComputer], [T("ide.openFile"), openFromComputer],
         [T("ide.newProject"), createProjectModal], [T("ide.terminal"), () => openPanel("terminal")],
         [T("ide.search"), () => setActivity("search")], [T("ide.wordWrap"), toggleWrap],
-        [T("ide.save"), save], [T("ide.goToFile"), quickOpen]
+        [T("ide.save"), save], [T("ide.goToFile"), quickOpen], [T("ide.selectLanguage"), selectLanguage]
       ];
       const list = UI.el("div", { class: "vsc-tree" });
       cmds.forEach(([label, fn]) => { const n = UI.el("div", { class: "vsc-tree-item", text: label }); n.addEventListener("click", () => { ref.close(); fn(); }); list.appendChild(n); });
