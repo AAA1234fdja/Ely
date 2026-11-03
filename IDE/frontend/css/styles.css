@@ -1093,3 +1093,33 @@ label.field .hint { color: var(--muted); font-size: 10px; font-weight: 400; }
 /* IDE: selector de modo de lenguaje en la barra de estado */
 .vsc-sb-lang { background: none; border: none; color: #fff; font-size: 11.5px; cursor: pointer; padding: 0 7px; height: 100%; }
 .vsc-sb-lang:hover { background: rgba(255,255,255,.15); }
+
+/* ── Chat: acciones de conversación/proyecto ───────────────────────────── */
+.cs-actions { display: flex; flex-direction: column; gap: 5px; padding: 0 2px; }
+.cs-new.ghost { background: none; color: var(--muted); }
+.cs-new.ghost:hover { color: var(--text); }
+.cs-project-row { display: flex; align-items: center; gap: 5px; padding: 8px 6px 2px; }
+.cs-project-row .icon-btn { width: 22px; height: 22px; font-size: 11px; flex: none; opacity: 0.65; }
+.cs-project-row .icon-btn:hover { opacity: 1; }
+.cs-project-select {
+  flex: 1; min-width: 0; background: var(--bg-soft); color: var(--text);
+  border: 1px solid var(--border); border-radius: 7px; padding: 4px 6px;
+  font: inherit; font-size: 12px; cursor: pointer;
+}
+.cs-head { display: flex; align-items: center; gap: 6px; }
+.cs-clear { background: none; border: none; color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; padding: 2px 4px; border-radius: 5px; }
+.cs-clear:hover { color: var(--red); background: var(--bg-soft); }
+.cs-act.danger:hover { color: var(--red); }
+/* Teclado: las acciones no pueden depender solo del hover. */
+.cs-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.cs-item:focus-within .cs-act, .cs-act:focus-visible { opacity: 1; }
+
+/* ── Widget: proyecto activo (misma conversación que la vista /chat) ───── */
+.cw-project {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  background: none; border: none; border-bottom: 1px solid var(--border);
+  color: var(--muted); font: inherit; font-size: 11px; padding: 5px 12px;
+  cursor: pointer; text-align: left;
+}
+.cw-project:hover { color: var(--text); background: var(--bg-soft); }
+.cw-project-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

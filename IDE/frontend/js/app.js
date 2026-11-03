@@ -378,6 +378,9 @@
       await loadScript("js/viewer.js");
       await loadScript("js/icons.js");
       await loadScript("js/syntax.js");
+      /* Almacén único de conversación: debe existir antes de cualquier vista
+         de chat y antes del widget flotante (compartido con el CLI). */
+      await loadScript("js/chat-store.js");
 
       const side = document.querySelector("aside");
       if (side) {

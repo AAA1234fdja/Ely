@@ -294,10 +294,10 @@ class Engine:
         if storage.profile.id == self.profile().id:
             storage.migrate_legacy(self.state / "sessions.json")
 
-    def sessions(self, profile_id: str | None = None) -> list[dict[str, Any]]:
+    def sessions(self, profile_id: str | None = None, project: str | None = None) -> list[dict[str, Any]]:
         storage = self._storage(profile_id)
         self._adopt_legacy(storage)
-        return storage.sessions()
+        return storage.sessions(project)
 
     def save_session(self, session: dict[str, Any], profile_id: str | None = None) -> dict[str, Any]:
         pid = profile_id or session.get("profile")
@@ -305,6 +305,22 @@ class Engine:
 
     def delete_session(self, session_id: str, profile_id: str | None = None) -> bool:
         return self._storage(profile_id).delete_session(session_id)
+
+    def clear_sessions(self, profile_id: str | None = None, project: str | None = None) -> int:
+        return self._storage(profile_id).clear_sessions(project)
+
+    # ------------------------------------------------------------------ proyectos de chat
+    def chat_projects(self, profile_id: str | None = None) -> list[dict[str, Any]]:
+        return self._storage(profile_id).projects()
+
+    def create_chat_project(self, name: str, root: str = "", profile_id: str | None = None) -> dict[str, Any]:
+        return self._storage(profile_id).create_project(name, root)
+
+    def rename_chat_project(self, project_id: str, name: str, profile_id: str | None = None) -> dict[str, Any]:
+        return self._storage(profile_id).rename_project(project_id, name)
+
+    def delete_chat_project(self, project_id: str, profile_id: str | None = None) -> bool:
+        return self._storage(profile_id).delete_project(project_id)
 
     # ------------------------------------------------------------------ local storage
     def storage_overview(self, profile_id: str | None = None) -> dict[str, Any]:

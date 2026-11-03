@@ -231,15 +231,60 @@ def cmd_ask(args: argparse.Namespace) -> int:
     return 0
 
 
+def _chat_session_id() -> str:
+    import time
+    import uuid
+    return "s_" + uuid.uuid4().hex[:8] + format(int(time.time() * 1000), "x")[-4:]
+
+
 def cmd_chat(args: argparse.Namespace) -> int:
+    """REPL con memoria real: la conversación se guarda en Local Storage.
+
+    El historial se comparte con la interfaz web porque ambos usan el mismo
+    almacén por perfil y proyecto (``Local Storage/<perfil>/generado``).
+    """
     engine = Engine()
     agent = get_agent(args.agent)
-    history: list[dict[str, str]] = []
-    banner()
-    print(f"  Agente: {bold(agent.name)} · perfil: {bold(args.profile or 'default')}")
-    print(dim("  /agente <id>  /perfil <id>  /limpiar  /salir\n"))
     agent_id = agent.id
     profile_id = args.profile
+    project = getattr(args, "project", None) or "general"
+
+    projects = {p["id"]: p for p in engine.chat_projects(profile_id)}
+    if project not in projects:
+        engine.create_chat_project(project, "", profile_id)
+        projects = {p["id"]: p for p in engine.chat_projects(profile_id)}
+
+    existing = engine.sessions(profile_id, project)
+    session: dict[str, Any] | None = None
+    wanted = getattr(args, "session", None)
+    if wanted:
+        session = next((s for s in existing if s.get("id") == wanted), None)
+        if session is None:
+            return fail(f"No existe la conversación '{wanted}' en el proyecto '{project}'")
+    elif existing and not getattr(args, "new", False):
+        session = existing[0]          # retoma la más reciente del proyecto
+    if session is None:
+        session = {"id": _chat_session_id(), "project": project,
+                   "title": "Nueva conversación", "messages": []}
+
+    messages: list[dict[str, Any]] = list(session.get("messages") or [])
+    history: list[dict[str, str]] = [
+        {"role": m["role"], "content": m.get("content", "")}
+        for m in messages if m.get("role") in ("user", "assistant")
+    ]
+
+    def persist() -> None:
+        first = next((m for m in messages if m.get("role") == "user"), None)
+        session["title"] = session.get("title") if session.get("title") not in (
+            None, "", "Nueva conversación") else (first or {}).get("content", "Nueva conversación")[:70]
+        session["messages"] = messages
+        session["project"] = project
+        engine.save_session(session, profile_id)
+
+    banner()
+    print(f"  Agente: {bold(agent.name)} · perfil: {bold(profile_id or 'default')} · proyecto: {bold(project)}")
+    print(dim(f"  conversación: {session['id']} · {len(messages)} mensajes previos"))
+    print(dim("  /nuevo  /chats  /borrar <id>  /proyecto <id>  /proyectos  /agente <id>  /perfil <id>  /salir\n"))
     while True:
         try:
             line = input(violet("  ❯ ") if not NO_COLOR else "❯ ").strip()
@@ -249,10 +294,54 @@ def cmd_chat(args: argparse.Namespace) -> int:
         if not line:
             continue
         if line in ("/salir", "/exit", "/quit"):
+            persist()
+            print(dim(f"  conversación guardada: {session['id']}"))
             return 0
-        if line == "/limpiar":
-            history.clear()
-            print(dim("  historial borrado"))
+        if line in ("/nuevo", "/limpiar"):
+            persist()
+            session = {"id": _chat_session_id(), "project": project,
+                       "title": "Nueva conversación", "messages": []}
+            messages = []
+            history = []
+            print(dim(f"  conversación nueva: {session['id']}"))
+            continue
+        if line == "/chats":
+            rows = engine.sessions(profile_id, project)
+            if not rows:
+                print(dim("  (sin conversaciones en este proyecto)"))
+            for s in rows[:20]:
+                mark = "❯" if s.get("id") == session["id"] else " "
+                print(f"  {mark} {s.get('id')}  {len(s.get('messages') or [])} msj  {s.get('title', '')[:50]}")
+            continue
+        if line.startswith("/borrar "):
+            target = line.split(" ", 1)[1].strip()
+            ok = engine.delete_session(target, profile_id)
+            print(dim(f"  {'borrada' if ok else 'no encontrada'}: {target}"))
+            if ok and target == session["id"]:
+                session = {"id": _chat_session_id(), "project": project,
+                           "title": "Nueva conversación", "messages": []}
+                messages = []
+                history = []
+            continue
+        if line == "/proyectos":
+            for p in engine.chat_projects(profile_id):
+                mark = "❯" if p["id"] == project else " "
+                print(f"  {mark} {p['id']}  {p.get('name', '')}")
+            continue
+        if line.startswith("/proyecto "):
+            persist()
+            target = line.split(" ", 1)[1].strip()
+            known = {p["id"] for p in engine.chat_projects(profile_id)}
+            if target not in known:
+                engine.create_chat_project(target, "", profile_id)
+            project = target
+            rows = engine.sessions(profile_id, project)
+            session = rows[0] if rows else {"id": _chat_session_id(), "project": project,
+                                            "title": "Nueva conversación", "messages": []}
+            messages = list(session.get("messages") or [])
+            history = [{"role": m["role"], "content": m.get("content", "")}
+                       for m in messages if m.get("role") in ("user", "assistant")]
+            print(dim(f"  proyecto → {project} · conversación {session['id']}"))
             continue
         if line.startswith("/agente "):
             agent_id = line.split(" ", 1)[1].strip()
@@ -263,10 +352,17 @@ def cmd_chat(args: argparse.Namespace) -> int:
             print(dim(f"  perfil → {profile_id}"))
             continue
         print()
+        import time as _t
+        user_msg = {"role": "user", "content": line,
+                    "sent_at": _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime())}
+        messages.append(user_msg)
+        history.append({"role": "user", "content": line})
+        persist()          # se guarda aunque la respuesta falle
         answer: list[str] = []
+        error_msg = ""
         try:
             for event in engine.stream(
-                line, profile_id=profile_id, agent_id=agent_id, history=history[-12:],
+                line, profile_id=profile_id, agent_id=agent_id, history=history[-13:-1],
                 context=engine.build_context() if args.memory else None,
             ):
                 if event["type"] == "delta":
@@ -274,6 +370,7 @@ def cmd_chat(args: argparse.Namespace) -> int:
                     sys.stdout.write(event["text"])
                     sys.stdout.flush()
                 elif event["type"] == "error":
+                    error_msg = event["message"]
                     print(bad(event["message"]))
                     if event.get("detail"):
                         print(dim(str(event["detail"])[:400]))
@@ -283,12 +380,54 @@ def cmd_chat(args: argparse.Namespace) -> int:
                     print(dim(f"\n  [{usage.get('total_tokens', 0)} tokens]"))
         except KeyboardInterrupt:
             print(dim("\n  cancelado"))
-            continue
         text = "".join(answer)
+        assistant_msg: dict[str, Any] = {"role": "assistant", "content": text}
+        if error_msg:
+            assistant_msg["error"] = error_msg
+        messages.append(assistant_msg)
         if text:
-            history.append({"role": "user", "content": line})
             history.append({"role": "assistant", "content": text})
+        persist()
         print()
+
+
+def cmd_chats(args: argparse.Namespace) -> int:
+    """Lista o borra conversaciones guardadas (mismo almacén que la web)."""
+    engine = Engine()
+    if args.clear:
+        n = engine.clear_sessions(args.profile, args.project)
+        print(ok(f"{n} conversaciones borradas"))
+        return 0
+    if args.delete:
+        deleted = engine.delete_session(args.delete, args.profile)
+        return 0 if deleted else fail(f"No existe la conversación '{args.delete}'")
+    rows = engine.sessions(args.profile, args.project)
+    if not rows:
+        print(dim("  (sin conversaciones guardadas)"))
+        return 0
+    print(bold(f"  {len(rows)} conversaciones" + (f" · proyecto {args.project}" if args.project else "")))
+    for s in rows:
+        print(f"  {s.get('id')}  [{s.get('project', 'general')}]  "
+              f"{len(s.get('messages') or [])} msj  {s.get('title', '')[:60]}")
+    print(dim("\n  ely chat --session <id>   retomar · ely chats --delete <id>   borrar"))
+    return 0
+
+
+def cmd_projects(args: argparse.Namespace) -> int:
+    """Proyectos de chat: agrupan conversaciones y se comparten con la web."""
+    engine = Engine()
+    if args.create:
+        p = engine.create_chat_project(args.create, "", args.profile)
+        print(ok(f"proyecto creado: {p['id']}"))
+        return 0
+    if args.delete:
+        return 0 if engine.delete_chat_project(args.delete, args.profile) else fail("Proyecto no encontrado")
+    counts: dict[str, int] = {}
+    for s in engine.sessions(args.profile):
+        counts[s.get("project", "general")] = counts.get(s.get("project", "general"), 0) + 1
+    for p in engine.chat_projects(args.profile):
+        print(f"  {p['id']:<20} {counts.get(p['id'], 0):>3} chats  {p.get('name', '')}")
+    return 0
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -645,7 +784,23 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-a", "--agent", default="photon")
     p.add_argument("-p", "--profile")
     p.add_argument("--memory", action="store_true")
+    p.add_argument("--project", help="proyecto de chat (comparte historial con la web)")
+    p.add_argument("--session", help="id de conversación a retomar")
+    p.add_argument("--new", action="store_true", help="empieza una conversación nueva")
     p.set_defaults(func=cmd_chat)
+
+    p = sub.add_parser("chats", help="lista, abre o borra conversaciones guardadas")
+    p.add_argument("-p", "--profile")
+    p.add_argument("--project")
+    p.add_argument("--delete", metavar="ID", help="borra la conversación indicada")
+    p.add_argument("--clear", action="store_true", help="borra todas (o las del proyecto)")
+    p.set_defaults(func=cmd_chats)
+
+    p = sub.add_parser("projects", help="proyectos de chat (agrupan conversaciones)")
+    p.add_argument("-p", "--profile")
+    p.add_argument("--create", metavar="NOMBRE")
+    p.add_argument("--delete", metavar="ID")
+    p.set_defaults(func=cmd_projects)
 
     p = sub.add_parser("run", help="ejecuta un workflow multi-agente")
     p.add_argument("workflow")

@@ -146,8 +146,18 @@
     calls: (limit) => request("/calls?limit=" + (limit || 200)),
     tools: () => request("/tools"),
     mcp: () => request("/mcp"),
-    sessions: (profile) => request("/sessions" + (profile ? "?profile=" + encodeURIComponent(profile) : "")),
+    sessions: (profile, project) => {
+      const q = [];
+      if (profile) q.push("profile=" + encodeURIComponent(profile));
+      if (project) q.push("project=" + encodeURIComponent(project));
+      return request("/sessions" + (q.length ? "?" + q.join("&") : ""));
+    },
     saveSession: (session) => request("/sessions", { method: "POST", body: session }),
+    clearSessions: (profile, project) => request("/sessions/clear", { method: "POST", body: { profile, project } }),
+    chatProjects: (profile) => request("/chat/projects" + (profile ? "?profile=" + encodeURIComponent(profile) : "")),
+    createChatProject: (name, root, profile) => request("/chat/projects", { method: "POST", body: { name, root, profile } }),
+    renameChatProject: (id, name, profile) => request("/chat/projects", { method: "PATCH", body: { id, name, profile } }),
+    deleteChatProject: (id, profile) => request("/chat/projects/" + encodeURIComponent(id) + (profile ? "?profile=" + encodeURIComponent(profile) : ""), { method: "DELETE" }),
     deleteSession: (id, profile) => request("/sessions/" + encodeURIComponent(id) + (profile ? "?profile=" + encodeURIComponent(profile) : ""), { method: "DELETE" }),
     storage: (profile) => request("/storage" + (profile ? "?profile=" + encodeURIComponent(profile) : "")),
     uploadStorage: (data) => request("/storage/upload", { method: "POST", body: data }),

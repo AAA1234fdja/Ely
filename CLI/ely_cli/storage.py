@@ -29,7 +29,9 @@ PLANNED = "planeado"
 MAX_SESSIONS = 100
 MAX_PLANNED = 200
 # Archivos de índice que no se listan como "archivos sueltos".
-_INDEX_FILES = {"sessions.json", "items.json"}
+_INDEX_FILES = {"sessions.json", "items.json", "projects.json"}
+# Proyecto al que pertenecen las conversaciones que no indican proyecto.
+DEFAULT_PROJECT = "general"
 
 
 def _now() -> str:
@@ -79,14 +81,26 @@ class ProfileStorage:
     def sessions_path(self) -> Path:
         return self.generated / "sessions.json"
 
-    def sessions(self) -> list[dict[str, Any]]:
+    def sessions(self, project: str | None = None) -> list[dict[str, Any]]:
+        """Conversaciones del perfil; opcionalmente filtradas por proyecto.
+
+        Las sesiones sin ``project`` se consideran del proyecto por defecto,
+        de modo que el historial antiguo sigue visible.
+        """
         data = self._read(self.sessions_path, [])
-        return data if isinstance(data, list) else []
+        rows = data if isinstance(data, list) else []
+        for s in rows:
+            s.setdefault("project", DEFAULT_PROJECT)
+        if project:
+            rows = [s for s in rows if s.get("project") == project]
+        return rows
 
     def save_session(self, session: dict[str, Any]) -> dict[str, Any]:
         sessions = [s for s in self.sessions() if s.get("id") != session.get("id")]
         session["profile"] = self.profile.id
+        session["project"] = session.get("project") or DEFAULT_PROJECT
         session["updated_at"] = _now()
+        session.setdefault("created_at", session["updated_at"])
         sessions.insert(0, session)
         self._write(self.sessions_path, sessions[:MAX_SESSIONS])
         return session
@@ -96,6 +110,63 @@ class ProfileStorage:
         kept = [s for s in sessions if s.get("id") != session_id]
         self._write(self.sessions_path, kept)
         return len(kept) != len(sessions)
+
+    def clear_sessions(self, project: str | None = None) -> int:
+        """Borra todas las conversaciones (o solo las de un proyecto)."""
+        sessions = self.sessions()
+        if project:
+            kept = [s for s in sessions if s.get("project") != project]
+        else:
+            kept = []
+        self._write(self.sessions_path, kept)
+        return len(sessions) - len(kept)
+
+    # ------------------------------------------------------------ proyectos de chat
+    @property
+    def projects_path(self) -> Path:
+        return self.generated / "projects.json"
+
+    def projects(self) -> list[dict[str, Any]]:
+        data = self._read(self.projects_path, [])
+        rows = data if isinstance(data, list) else []
+        if not any(p.get("id") == DEFAULT_PROJECT for p in rows):
+            rows.insert(0, {"id": DEFAULT_PROJECT, "name": "General",
+                            "root": "", "created_at": _now()})
+            self._write(self.projects_path, rows)
+        return rows
+
+    def create_project(self, name: str, root: str = "") -> dict[str, Any]:
+        clean = str(name or "").strip()
+        if not clean:
+            raise ConfigError("Falta el nombre del proyecto.")
+        pid = re.sub(r"[^A-Za-z0-9_-]", "-", clean.lower()).strip("-") or "proyecto"
+        rows = self.projects()
+        if any(p.get("id") == pid for p in rows):
+            raise ConfigError(f"Ya existe un proyecto con id '{pid}'.")
+        project = {"id": pid, "name": clean, "root": root, "created_at": _now()}
+        rows.append(project)
+        self._write(self.projects_path, rows)
+        return project
+
+    def rename_project(self, project_id: str, name: str) -> dict[str, Any]:
+        rows = self.projects()
+        for p in rows:
+            if p.get("id") == project_id:
+                p["name"] = str(name or p["name"]).strip()
+                self._write(self.projects_path, rows)
+                return p
+        raise ConfigError("Proyecto no encontrado.")
+
+    def delete_project(self, project_id: str) -> bool:
+        if project_id == DEFAULT_PROJECT:
+            raise ConfigError("El proyecto General no se puede eliminar.")
+        rows = self.projects()
+        kept = [p for p in rows if p.get("id") != project_id]
+        if len(kept) == len(rows):
+            return False
+        self._write(self.projects_path, kept)
+        self.clear_sessions(project_id)
+        return True
 
     def migrate_legacy(self, legacy_path: Path) -> int:
         """Mueve sesiones globales antiguas (.ely/sessions.json) a este perfil.

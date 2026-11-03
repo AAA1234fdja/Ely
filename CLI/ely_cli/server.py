@@ -62,7 +62,7 @@ class ElyHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", self.origin_allow())
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
         self.send_header("Cache-Control", "no-store")
         for key, value in (extra or {}).items():
             self.send_header(key, value)
@@ -112,6 +112,9 @@ class ElyHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         self._dispatch("POST")
+
+    def do_PATCH(self) -> None:  # noqa: N802
+        self._dispatch("PATCH")
 
     def do_DELETE(self) -> None:  # noqa: N802
         self._dispatch("DELETE")
@@ -298,14 +301,38 @@ class ElyHandler(BaseHTTPRequestHandler):
             ))
 
         if method == "GET" and route == "/sessions":
-            return self.json({"sessions": engine.sessions(self.query().get("profile"))})
+            q = self.query()
+            return self.json({"sessions": engine.sessions(q.get("profile"), q.get("project"))})
 
         if method == "POST" and route == "/sessions":
             body = self.read_json()
             return self.json(engine.save_session(body))
 
+        if method == "POST" and route == "/sessions/clear":
+            body = self.read_json()
+            return self.json({"deleted": engine.clear_sessions(body.get("profile"), body.get("project"))})
+
         if method == "DELETE" and parts[:2] == ["api", "sessions"] and len(parts) == 3:
             return self.json({"ok": engine.delete_session(parts[2], self.query().get("profile"))})
+
+        # Proyectos de chat: agrupan conversaciones y se comparten CLI ↔ web.
+        if method == "GET" and route == "/chat/projects":
+            return self.json({"projects": engine.chat_projects(self.query().get("profile"))})
+
+        if method == "POST" and route == "/chat/projects":
+            body = self.read_json()
+            return self.json(engine.create_chat_project(
+                str(body.get("name") or ""), str(body.get("root") or ""), body.get("profile")
+            ))
+
+        if method == "PATCH" and route == "/chat/projects":
+            body = self.read_json()
+            return self.json(engine.rename_chat_project(
+                str(body.get("id") or ""), str(body.get("name") or ""), body.get("profile")
+            ))
+
+        if method == "DELETE" and parts[:3] == ["api", "chat", "projects"] and len(parts) == 4:
+            return self.json({"ok": engine.delete_chat_project(parts[3], self.query().get("profile"))})
 
         # Local Storage: archivos por perfil en dos categorías (generado / planeado).
         if method == "GET" and route == "/storage":
