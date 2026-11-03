@@ -427,6 +427,24 @@ class LocalStorageTest(unittest.TestCase):
         with self.assertRaises(WorkspaceError):
             self.engine.create_project("demo", "web")  # ya existe
 
+    def test_workspace_upload_binary(self):
+        result = self.engine.upload_workspace("proj/img.png", b"\x89PNG\r\n")
+        self.assertTrue(result["saved"])
+        self.assertEqual((self.tmp / "proj" / "img.png").read_bytes(), b"\x89PNG\r\n")
+
+    def test_terminal_exec_and_cd(self):
+        (self.tmp / "sub").mkdir()
+        (self.tmp / "sub" / "x.txt").write_text("hola", encoding="utf-8")
+        echo = self.engine.run_command("echo hola-mundo")
+        self.assertEqual(echo["stdout"].strip(), "hola-mundo")
+        self.assertEqual(echo["code"], 0)
+        cd = self.engine.run_command("cd sub")
+        self.assertEqual(cd["cwd"], "sub")
+        ls = self.engine.run_command("ls", "sub")
+        self.assertIn("x.txt", ls["stdout"])
+        bad = self.engine.run_command("cd ..")
+        self.assertEqual(bad["code"], 1)
+
     def test_workspace_search(self):
         from ely_cli.workspace import WorkspaceError
         (self.tmp / "src").mkdir()

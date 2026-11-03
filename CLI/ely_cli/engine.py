@@ -344,6 +344,14 @@ class Engine:
         from . import workspace
         return workspace.search(self.root, query)
 
+    def upload_workspace(self, rel: str, data: bytes) -> dict[str, Any]:
+        from . import workspace
+        return workspace.upload(self.root, rel, data)
+
+    def run_command(self, command: str, cwd: str = "") -> dict[str, Any]:
+        from . import workspace
+        return workspace.run_command(self.root, command, cwd)
+
     # ------------------------------------------------------------------ memoria
     def memories(self) -> list[dict[str, Any]]:
         return self._read_json("memory.json", [])

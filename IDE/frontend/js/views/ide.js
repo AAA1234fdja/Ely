@@ -1,11 +1,13 @@
-/* IDE · interfaz tipo VS Code: barra de menús, activity bar, explorador con
- * iconos Material, pestañas, editor con resaltado de sintaxis y barra de estado.
- * File permite abrir desde el ordenador, desde Local Storage (modal centrado)
- * y crear proyectos. Conserva la lógica de orígenes workspace/repo/storage.
+/* IDE · interfaz tipo VS Code (paridad con la barra de menús de las capturas):
+ *  - Menús Archivo/Editar/Selección/Ver/Ir/Ejecutar con sus funciones.
+ *  - «Abrir carpeta» abre el gestor de archivos del ordenador (webkitdirectory).
+ *  - Carpetas plegadas por defecto, desplegables al clic.
+ *  - Los archivos se abren a pantalla completa en el editor (no en modal).
+ *  - Panel inferior (Problems/Output/Debug/Terminal/Puertos); Ctrl+J / Ctrl+Ñ
+ *    abre la terminal, conectada a un backend real en el workspace.
  */
 (function () {
   "use strict";
-
   window.Views = window.Views || {};
 
   const LANG = {
@@ -14,43 +16,24 @@
     toml: "TOML", rs: "Rust", go: "Go", sql: "SQL", txt: "Plain Text", env: "Env",
     csv: "CSV", svg: "SVG", xml: "XML", c: "C", cpp: "C++", java: "Java", rb: "Ruby", php: "PHP"
   };
-  const RICH_EXT = ["pdf", "html", "htm", "tex", "latex", "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "md", "csv"];
+  const PREVIEW = ["pdf", "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg"];
+  const enc = encodeURIComponent;
 
   window.Views.ide = function (view, App) {
     const T = (k) => t(k);
     const state = {
-      source: ["repo", "storage"].includes(localStorage.getItem("ely.ideSource")) ? localStorage.getItem("ely.ideSource") : "workspace",
-      repo: localStorage.getItem("ely.ideRepo") || null,
+      source: "workspace", repo: localStorage.getItem("ely.ideRepo") || null,
       repos: [], repoTree: null,
       storageProfile: localStorage.getItem("ely.ideStorageProfile") || null,
       storageTree: null, tree: null,
-      tabs: [],
-      active: null,
-      docs: {}, dirty: {},
-      activity: "explorer",
-      /* Sin proyecto predeterminado: hay que cargarlo explícitamente. */
-      opened: false
+      tabs: [], active: null, docs: {}, dirty: {},
+      activity: "explorer", opened: false, projectRoot: null,
+      openDirs: new Set(),
+      panel: { open: false, tab: "terminal" },
+      layout: { menubar: true, activity: true, sidebar: true, status: true },
+      wordWrap: false, termCwd: "", history: [], histIdx: 0
     };
-
-    /* Abre (carga) un proyecto/origen. Hasta que no se llama, el IDE muestra
-       el estado «Ninguna carpeta abierta», como VS Code. */
-    function loadProject(source) {
-      state.opened = true;
-      state.source = source;
-      localStorage.setItem("ely.ideSource", source);
-      sourceSelect.value = source;
-      state.tabs = []; state.docs = {}; state.active = null;
-      renderAll();
-      reloadSource();
-    }
-
-    function closeProject() {
-      state.opened = false;
-      state.tabs = []; state.docs = {}; state.active = null;
-      state.tree = null; state.repoTree = null; state.storageTree = null;
-      Store.set({ ideTabs: [], ideFile: null });
-      renderAll();
-    }
+    const soon = () => UI.toast("warn", T("ide.soon"), T("ide.soonBody"));
 
     /* ---------------------------------------------------------- layout */
     const root = UI.el("div", { class: "vsc" });
@@ -60,70 +43,144 @@
     const sidebar = UI.el("div", { class: "vsc-sidebar" });
     const editorArea = UI.el("div", { class: "vsc-editor-area" });
     const statusbar = UI.el("div", { class: "vsc-statusbar" });
-    body.appendChild(activity);
-    body.appendChild(sidebar);
-    body.appendChild(editorArea);
-    root.appendChild(menubar);
-    root.appendChild(body);
-    root.appendChild(statusbar);
+    body.appendChild(activity); body.appendChild(sidebar); body.appendChild(editorArea);
+    root.appendChild(menubar); root.appendChild(body); root.appendChild(statusbar);
 
     /* ---------------------------------------------------------- menubar */
-    function menu(label, items) {
-      const btn = UI.el("button", { class: "vsc-menu-btn", text: label });
+    function closeAllMenus() { document.querySelectorAll(".vsc-dropdown.open").forEach((d) => d.classList.remove("open")); }
+    function buildMenu(items) {
       const drop = UI.el("div", { class: "vsc-dropdown" });
       items.forEach((it) => {
         if (it === "-") { drop.appendChild(UI.el("div", { class: "vsc-sep" })); return; }
-        const row = UI.el("button", { class: "vsc-dropdown-item" }, [
-          UI.el("span", { text: it.label }),
-          it.key ? UI.el("span", { class: "vsc-key", text: it.key }) : null
+        if (it.sub) {
+          const row = UI.el("div", { class: "vsc-dropdown-item vsc-sub" }, [
+            UI.el("span", { text: it.label }), UI.el("span", { class: "vsc-key", text: "›" })
+          ]);
+          const sub = buildMenu(it.sub); sub.classList.add("vsc-submenu");
+          row.appendChild(sub); drop.appendChild(row); return;
+        }
+        const row = UI.el("button", { class: "vsc-dropdown-item" + (it.disabled ? " disabled" : "") }, [
+          UI.el("span", { text: it.label }), it.key ? UI.el("span", { class: "vsc-key", text: it.key }) : null
         ]);
-        row.addEventListener("click", () => { drop.classList.remove("open"); it.action(); });
+        row.addEventListener("click", () => { closeAllMenus(); if (it.disabled) { soon(); return; } it.action && it.action(); });
         drop.appendChild(row);
       });
+      return drop;
+    }
+    function menu(label, items) {
+      const btn = UI.el("button", { class: "vsc-menu-btn", text: label });
+      const drop = buildMenu(items);
       const wrap = UI.el("div", { class: "vsc-menu" }, [btn, drop]);
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        document.querySelectorAll(".vsc-dropdown.open").forEach((d) => d.classList.remove("open"));
-        drop.classList.toggle("open");
-      });
+      btn.addEventListener("click", (e) => { e.stopPropagation(); const was = drop.classList.contains("open"); closeAllMenus(); if (!was) drop.classList.add("open"); });
+      btn.addEventListener("mouseenter", () => { if (document.querySelector(".vsc-dropdown.open")) { closeAllMenus(); drop.classList.add("open"); } });
       return wrap;
     }
-    document.addEventListener("pointerdown", (e) => {
-      if (!e.target.closest(".vsc-menu")) document.querySelectorAll(".vsc-dropdown.open").forEach((d) => d.classList.remove("open"));
-    });
+    document.addEventListener("pointerdown", (e) => { if (!e.target.closest(".vsc-menu")) closeAllMenus(); });
 
-    menubar.appendChild(UI.el("span", { class: "vsc-logo", text: "◈" }));
-    menubar.appendChild(menu(T("ide.file"), [
-      { label: T("ide.openFolder"), action: () => loadProject("workspace") },
-      { label: T("ide.openComputer"), action: openFromComputer },
-      { label: T("ide.openStorage"), action: openStorageModal },
-      "-",
-      { label: T("ide.newProject"), action: createProjectModal },
-      "-",
-      { label: T("ide.save"), key: "Ctrl+S", action: save },
-      "-",
-      { label: T("ide.closeFolder"), action: closeProject },
-      { label: T("ide.closeEditor"), action: () => { state.active = null; state.tabs = []; renderAll(); } }
-    ]));
-    menubar.appendChild(menu(T("ide.edit"), [
-      { label: T("ide.undo"), key: "Ctrl+Z", action: () => document.execCommand("undo") },
-      { label: T("ide.redo"), key: "Ctrl+Y", action: () => document.execCommand("redo") }
-    ]));
-    menubar.appendChild(menu(T("ide.view"), [
-      { label: T("ide.explorer"), action: () => setActivity("explorer") },
-      { label: T("ide.search"), action: () => setActivity("search") }
-    ]));
-    menubar.appendChild(menu(T("ide.run"), [
-      { label: T("ide.runFile"), action: runActive }
-    ]));
+    function recentProjects() { try { return JSON.parse(localStorage.getItem("ely.ideRecent") || "[]"); } catch (e) { return []; } }
+    function pushRecent(name) {
+      const list = [name, ...recentProjects().filter((x) => x !== name)].slice(0, 8);
+      localStorage.setItem("ely.ideRecent", JSON.stringify(list));
+    }
 
-    /* ---------------------------------------------------------- activity bar */
+    function buildMenus() {
+      UI.clear(menubar);
+      menubar.appendChild(UI.el("span", { class: "vsc-logo", text: "◈" }));
+      menubar.appendChild(menu(T("ide.file"), [
+        { label: T("ide.newTextFile"), key: "Ctrl+N", action: () => newFileModal(".txt") },
+        { label: T("ide.newFile"), action: () => newFileModal("") },
+        { label: T("ide.newWindow"), action: () => window.open(location.href, "_blank") },
+        "-",
+        { label: T("ide.openFile"), key: "Ctrl+O", action: openFromComputer },
+        { label: T("ide.openFolder"), key: "Ctrl+K Ctrl+O", action: openFolderFromComputer },
+        { label: T("ide.openStorage"), action: openStorageModal },
+        { label: T("ide.openRecent"), sub: recentProjects().length ? recentProjects().map((p) => ({ label: p, action: () => openProjectRoot(p) })) : [{ label: T("ide.noRecent"), disabled: true }] },
+        "-",
+        { label: T("ide.newProject"), action: createProjectModal },
+        "-",
+        { label: T("ide.save"), key: "Ctrl+S", action: save },
+        { label: T("ide.saveAs"), key: "Ctrl+Shift+S", action: saveAs },
+        { label: T("ide.saveAll"), action: saveAll },
+        "-",
+        { label: T("ide.closeEditor"), key: "Ctrl+F4", action: closeActiveTab },
+        { label: T("ide.closeFolder"), action: closeProject }
+      ]));
+      menubar.appendChild(menu(T("ide.edit"), [
+        { label: T("ide.undo"), key: "Ctrl+Z", action: () => editorCmd("undo") },
+        { label: T("ide.redo"), key: "Ctrl+Y", action: () => editorCmd("redo") },
+        "-",
+        { label: T("ide.cut"), key: "Ctrl+X", action: () => editorCmd("cut") },
+        { label: T("ide.copy"), key: "Ctrl+C", action: () => editorCmd("copy") },
+        { label: T("ide.paste"), key: "Ctrl+V", action: pasteClip },
+        "-",
+        { label: T("ide.find"), key: "Ctrl+F", action: findInFile },
+        { label: T("ide.replace"), key: "Ctrl+H", action: replaceInFile },
+        { label: T("ide.findInFiles"), key: "Ctrl+Shift+F", action: () => setActivity("search") },
+        "-",
+        { label: T("ide.toggleComment"), key: "Ctrl+}", action: toggleComment }
+      ]));
+      menubar.appendChild(menu(T("ide.selection"), [
+        { label: T("ide.selectAll"), key: "Ctrl+A", action: () => codeTA && codeTA.select() },
+        { label: T("ide.copyLineUp"), key: "Shift+Alt+↑", action: () => lineOp("copyUp") },
+        { label: T("ide.copyLineDown"), key: "Shift+Alt+↓", action: () => lineOp("copyDown") },
+        { label: T("ide.moveLineUp"), key: "Alt+↑", action: () => lineOp("moveUp") },
+        { label: T("ide.moveLineDown"), key: "Alt+↓", action: () => lineOp("moveDown") },
+        { label: T("ide.duplicateSel"), action: () => lineOp("dup") },
+        "-",
+        { label: T("ide.multiCursor"), disabled: true }
+      ]));
+      menubar.appendChild(menu(T("ide.view"), [
+        { label: T("ide.commandPalette"), key: "Ctrl+Shift+P", action: commandPalette },
+        "-",
+        { label: T("ide.appearance"), sub: [
+          { label: T("ide.menuBar"), action: () => toggleLayout("menubar") },
+          { label: T("ide.activityBar"), action: () => toggleLayout("activity") },
+          { label: T("ide.sideBar"), key: "Ctrl+B", action: () => toggleLayout("sidebar") },
+          { label: T("ide.panel"), key: "Ctrl+J", action: () => togglePanel() },
+          { label: T("ide.statusBar"), action: () => toggleLayout("status") }
+        ] },
+        "-",
+        { label: T("ide.explorer"), key: "Ctrl+Shift+E", action: () => setActivity("explorer") },
+        { label: T("ide.search"), key: "Ctrl+Shift+F", action: () => setActivity("search") },
+        { label: T("ide.scm"), key: "Ctrl+Shift+G", action: () => setActivity("scm") },
+        { label: T("ide.runDebug"), key: "Ctrl+Shift+D", action: () => setActivity("run") },
+        { label: T("ide.extensions"), key: "Ctrl+Shift+X", action: () => setActivity("extensions") },
+        "-",
+        { label: T("ide.problems"), key: "Ctrl+Shift+M", action: () => openPanel("problems") },
+        { label: T("ide.output"), key: "Ctrl+Shift+U", action: () => openPanel("output") },
+        { label: T("ide.debugConsole"), action: () => openPanel("debug") },
+        { label: T("ide.terminal"), key: "Ctrl+Ñ", action: () => openPanel("terminal") },
+        "-",
+        { label: T("ide.wordWrap"), key: "Alt+Z", action: toggleWrap }
+      ]));
+      menubar.appendChild(menu(T("ide.go"), [
+        { label: T("ide.back"), key: "Alt+←", action: () => tabHistory(-1) },
+        { label: T("ide.forward"), key: "Alt+→", action: () => tabHistory(1) },
+        "-",
+        { label: T("ide.goToFile"), key: "Ctrl+P", action: quickOpen },
+        { label: T("ide.goToLine"), key: "Ctrl+G", action: goToLine },
+        "-",
+        { label: T("ide.goToDef"), key: "F12", disabled: true },
+        { label: T("ide.goToRef"), key: "Shift+F12", disabled: true }
+      ]));
+      menubar.appendChild(menu(T("ide.run"), [
+        { label: T("ide.startDebug"), key: "F5", action: runActive },
+        { label: T("ide.runNoDebug"), key: "Ctrl+F5", action: runActive },
+        { label: T("ide.stopDebug"), key: "Shift+F5", disabled: true },
+        "-",
+        { label: T("ide.toggleBreakpoint"), key: "F9", disabled: true },
+        { label: T("ide.addConfig"), disabled: true }
+      ]));
+      menubar.appendChild(UI.el("div", { style: { flex: "1" } }));
+      menubar.appendChild(UI.el("button", { class: "vsc-menu-btn", html: "⌕", title: T("ide.search"), onclick: () => setActivity("search") }));
+      menubar.appendChild(UI.el("button", { class: "vsc-menu-btn", html: "◧", title: T("ide.sideBar"), onclick: () => toggleLayout("sidebar") }));
+      menubar.appendChild(UI.el("button", { class: "vsc-menu-btn", html: "▤", title: T("ide.panel"), onclick: () => togglePanel() }));
+    }
+
+    /* ---------------------------------------------------------- activity */
     const ACT = [
-      ["explorer", "🗀", T("ide.explorer")],
-      ["search", "⌕", T("ide.search")],
-      ["scm", "⑂", T("ide.scm")],
-      ["run", "▶", T("ide.runDebug")],
-      ["extensions", "⧉", T("ide.extensions")]
+      ["explorer", "🗀", T("ide.explorer")], ["search", "⌕", T("ide.search")],
+      ["scm", "⑂", T("ide.scm")], ["run", "▶", T("ide.runDebug")], ["extensions", "⧉", T("ide.extensions")]
     ];
     ACT.forEach(([id, icon, label]) => {
       const b = UI.el("button", { class: "vsc-act-btn" + (state.activity === id ? " on" : ""), title: label, html: icon });
@@ -132,7 +189,6 @@
     });
     activity.appendChild(UI.el("div", { style: { flex: "1" } }));
     activity.appendChild(UI.el("button", { class: "vsc-act-btn", title: T("nav.settings"), html: "⚙", onclick: () => App.navigate("settings") }));
-
     function setActivity(id) {
       state.activity = id;
       activity.querySelectorAll(".vsc-act-btn").forEach((b, i) => b.classList.toggle("on", ACT[i] && ACT[i][0] === id));
@@ -146,72 +202,43 @@
       if (state.activity === "search") return renderSearch();
       const titles = { scm: T("ide.scm"), run: T("ide.runDebug"), extensions: T("ide.extensions") };
       sidebar.appendChild(UI.el("div", { class: "vsc-side-title", text: (titles[state.activity] || "").toUpperCase() }));
-      const msgs = {
-        scm: T("ide.scmEmpty"),
-        run: T("ide.runEmpty"),
-        extensions: T("ide.extEmpty")
-      };
+      const msgs = { scm: T("ide.scmEmpty"), run: T("ide.runEmpty"), extensions: T("ide.extEmpty") };
       sidebar.appendChild(UI.el("div", { class: "vsc-side-empty", text: msgs[state.activity] || "" }));
     }
 
-    /* ---- Explorer ---- */
-    const sourceSelect = UI.el("select", {
-      class: "vsc-select",
-      onchange: (e) => {
-        state.source = e.target.value;
-        localStorage.setItem("ely.ideSource", state.source);
-        state.tabs = []; state.docs = {}; state.active = null;
-        renderAll();
-        if (state.source === "repo") loadRepoTree();
-        else if (state.source === "storage") loadStorageTree();
-        else loadTree();
-      }
-    }, [
-      UI.el("option", { value: "workspace", selected: state.source === "workspace", text: "Workspace" }),
-      UI.el("option", { value: "repo", selected: state.source === "repo", text: "Repo" }),
-      UI.el("option", { value: "storage", selected: state.source === "storage", text: "Local Storage" })
+    const sourceSelect = UI.el("select", { class: "vsc-select", onchange: (e) => { state.source = e.target.value; state.projectRoot = null; state.tabs = []; state.docs = {}; state.active = null; renderAll(); reloadSource(); } }, [
+      UI.el("option", { value: "workspace", text: "Workspace" }),
+      UI.el("option", { value: "repo", text: "Repo" }),
+      UI.el("option", { value: "storage", text: "Local Storage" })
     ]);
-    const storageSelect = UI.el("select", { class: "vsc-select", style: { display: state.source === "storage" ? "" : "none" } });
-    storageSelect.addEventListener("change", (e) => {
-      state.storageProfile = e.target.value || null;
-      localStorage.setItem("ely.ideStorageProfile", state.storageProfile || "");
-      state.storageTree = null; state.tabs = []; state.docs = {}; state.active = null;
-      renderAll(); loadStorageTree();
-    });
-    const repoSelect = UI.el("select", { class: "vsc-select", style: { display: state.source === "repo" ? "" : "none" } });
-    repoSelect.addEventListener("change", (e) => {
-      state.repo = e.target.value || null;
-      localStorage.setItem("ely.ideRepo", state.repo || "");
-      state.repoTree = null; state.tabs = []; state.docs = {}; state.active = null;
-      renderAll(); loadRepoTree();
-    });
-
+    const storageSelect = UI.el("select", { class: "vsc-select" });
+    storageSelect.addEventListener("change", (e) => { state.storageProfile = e.target.value || null; state.storageTree = null; state.tabs = []; state.active = null; renderAll(); loadStorageTree(); });
+    const repoSelect = UI.el("select", { class: "vsc-select" });
+    repoSelect.addEventListener("change", (e) => { state.repo = e.target.value || null; state.repoTree = null; state.tabs = []; state.active = null; renderAll(); loadRepoTree(); });
     const fileList = UI.el("div", { class: "vsc-tree" });
 
     function renderExplorer() {
       sidebar.appendChild(UI.el("div", { class: "vsc-side-title", text: T("ide.explorer").toUpperCase() }));
-
-      /* Sin proyecto cargado: estado «Ninguna carpeta abierta» (como VS Code). */
       if (!state.opened) {
         sidebar.appendChild(UI.el("div", { class: "vsc-nofolder" }, [
           UI.el("div", { class: "vsc-nofolder-title", text: T("ide.noFolder") }),
           UI.el("div", { class: "vsc-side-empty", text: T("ide.noFolderHint") }),
           UI.el("div", { class: "vsc-side-actions" }, [
-            UI.el("button", { class: "vsc-side-btn", text: T("ide.openFolder"), onclick: () => loadProject("workspace") }),
+            UI.el("button", { class: "vsc-side-btn", text: T("ide.openFolder"), onclick: openFolderFromComputer }),
             UI.el("button", { class: "vsc-side-btn ghost", text: T("ide.openStorage"), onclick: openStorageModal }),
             UI.el("button", { class: "vsc-side-btn ghost", text: T("ide.newProject"), onclick: createProjectModal })
           ])
         ]));
         return;
       }
-
       repoSelect.style.display = state.source === "repo" ? "" : "none";
       storageSelect.style.display = state.source === "storage" ? "" : "none";
-      const controls = UI.el("div", { class: "vsc-side-controls" }, [
+      sourceSelect.style.display = state.projectRoot ? "none" : "";
+      sidebar.appendChild(UI.el("div", { class: "vsc-side-controls" }, [
         sourceSelect, repoSelect, storageSelect,
-        UI.el("button", { class: "icon-btn", html: "⟳", title: T("common.refresh"), onclick: () => reloadSource() })
-      ]);
-      sidebar.appendChild(controls);
+        UI.el("button", { class: "icon-btn", html: "⟳", title: T("common.refresh"), onclick: reloadSource })
+      ]));
+      if (state.projectRoot) sidebar.appendChild(UI.el("div", { class: "vsc-project-name", text: state.projectRoot }));
       sidebar.appendChild(fileList);
       renderTree();
     }
@@ -226,22 +253,20 @@
       input.addEventListener("input", () => {
         clearTimeout(timer);
         timer = setTimeout(async () => {
-          const q = input.value.trim();
-          UI.clear(results);
+          const q = input.value.trim(); UI.clear(results);
           if (q.length < 2) return;
           results.appendChild(UI.loading(T("common.loading")));
           try {
-            const data = await API.searchWorkspace(q);
-            UI.clear(results);
+            const data = await API.searchWorkspace(q); UI.clear(results);
             const hits = (data.matches || []).slice(0, 60);
             if (!hits.length) { results.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ide.noResults") })); return; }
             hits.forEach((h) => {
               const node = UI.el("div", { class: "vsc-tree-item", title: h.text }, [
-                window.Icons ? Icons.file(h.path) : UI.el("span", { text: "•" }),
+                window.Icons ? Icons.file(h.path) : null,
                 UI.el("span", { class: "trunc", text: h.path.split("/").pop() }),
                 UI.el("span", { class: "muted", style: { fontSize: "10px", flex: "none" }, text: ":" + h.line })
               ]);
-              node.addEventListener("click", () => { state.source = "workspace"; sourceSelect.value = "workspace"; openFile(h.path); });
+              node.addEventListener("click", () => { state.source = "workspace"; state.projectRoot = null; openFile(h.path); });
               results.appendChild(node);
             });
           } catch (e) { UI.clear(results); results.appendChild(UI.errBox(e)); }
@@ -249,61 +274,54 @@
       });
     }
 
-    /* ---------------------------------------------------------- árbol */
+    /* ---------------------------------------------------------- árbol (carpetas plegadas) */
     function renderTree() {
       UI.clear(fileList);
       const tree = state.source === "repo" ? state.repoTree : state.source === "storage" ? state.storageTree : state.tree;
       if (!tree) { fileList.appendChild(UI.loading(T("common.loading"))); return; }
-      const entries = tree.entries || [];
-      const openDirs = state.source === "storage" ? new Set(["generado", "planeado"]) : new Set(["CLI", "IDE", "IDE/frontend", "IDE/frontend/js", "profiles"]);
+      let entries = tree.entries || [];
+      const base = state.projectRoot ? state.projectRoot + "/" : "";
+      if (base) entries = entries.filter((e) => e.path.startsWith(base)).map((e) => Object.assign({}, e, { path: e.path.slice(base.length) })).filter((e) => e.path);
       entries.forEach((entry) => {
         const depth = entry.path.split("/").length - 1;
         const parent = entry.path.split("/").slice(0, -1).join("/");
-        if (depth > 0 && !openDirs.has(parent)) return;
-        if (entry.type === "dir" && depth > 2) return;
+        if (depth > 0 && !state.openDirs.has(parent)) return;   // plegado por defecto
+        const full = base + entry.path;
         if (entry.type === "dir") {
+          const open = state.openDirs.has(entry.path);
           const node = UI.el("div", { class: "vsc-tree-item" }, [
-            UI.el("span", { class: "vsc-caret", text: openDirs.has(entry.path) ? "▾" : "▸" }),
-            window.Icons ? Icons.folder(openDirs.has(entry.path)) : null,
+            UI.el("span", { class: "vsc-caret", text: open ? "▾" : "▸" }),
+            window.Icons ? Icons.folder(open) : null,
             UI.el("span", { class: "trunc", text: entry.path.split("/").pop() })
           ]);
           node.style.paddingLeft = (6 + depth * 12) + "px";
-          node.addEventListener("click", () => { openDirs.has(entry.path) ? openDirs.delete(entry.path) : openDirs.add(entry.path); renderTree(); });
+          node.addEventListener("click", () => { open ? state.openDirs.delete(entry.path) : state.openDirs.add(entry.path); renderTree(); });
           fileList.appendChild(node);
           return;
         }
-        const node = UI.el("div", { class: "vsc-tree-item" + (entry.path === state.active ? " on" : "") }, [
-          window.Icons ? Icons.file(entry.path) : UI.el("span", { text: "•" }),
+        const node = UI.el("div", { class: "vsc-tree-item" + (full === state.active ? " on" : "") }, [
+          window.Icons ? Icons.file(entry.path) : null,
           UI.el("span", { class: "trunc", text: entry.path.split("/").pop() }),
-          state.dirty[entry.path] ? UI.el("span", { class: "dotm" }) : null
+          state.dirty[full] ? UI.el("span", { class: "dotm" }) : null
         ]);
         node.style.paddingLeft = (6 + depth * 12) + "px";
-        node.title = entry.path;
-        node.addEventListener("click", () => openFile(entry.path));
+        node.title = full;
+        node.addEventListener("click", () => openFile(full));
         fileList.appendChild(node);
       });
       if (!entries.length) fileList.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ide.emptyWorkspace") }));
     }
 
-    function reloadSource() {
-      if (state.source === "repo") loadRepoTree();
-      else if (state.source === "storage") loadStorageTree();
-      else loadTree();
-    }
-    async function loadTree() { try { state.tree = await API.tree(5); renderTree(); updateStatus(); } catch (e) { UI.clear(fileList); fileList.appendChild(UI.errBox(e, loadTree)); } }
-    async function loadRepoTree() {
-      if (!state.repo) { state.repoTree = { entries: [] }; renderTree(); return; }
-      try { state.repoTree = await API.repoTree(state.repo, 3); renderTree(); } catch (e) { UI.clear(fileList); fileList.appendChild(UI.errBox(e, loadRepoTree)); }
-    }
+    function reloadSource() { if (state.source === "repo") loadRepoTree(); else if (state.source === "storage") loadStorageTree(); else loadTree(); }
+    async function loadTree() { try { state.tree = await API.tree(6); renderTree(); updateStatus(); } catch (e) { UI.clear(fileList); fileList.appendChild(UI.errBox(e, loadTree)); } }
+    async function loadRepoTree() { if (!state.repo) { state.repoTree = { entries: [] }; renderTree(); return; } try { state.repoTree = await API.repoTree(state.repo, 3); renderTree(); } catch (e) { UI.clear(fileList); fileList.appendChild(UI.errBox(e, loadRepoTree)); } }
     async function loadStorageTree() {
       renderStorageOptions();
       if (!state.storageProfile) { state.storageTree = { entries: [] }; renderTree(); return; }
-      try { state.storageTree = await API.request("/storage/tree?profile=" + encodeURIComponent(state.storageProfile)); renderTree(); }
-      catch (e) { UI.clear(fileList); fileList.appendChild(UI.errBox(e, loadStorageTree)); }
+      try { state.storageTree = await API.request("/storage/tree?profile=" + enc(state.storageProfile)); renderTree(); } catch (e) { UI.clear(fileList); fileList.appendChild(UI.errBox(e, loadStorageTree)); }
     }
     function renderStorageOptions() {
-      UI.clear(storageSelect);
-      const profiles = App.profiles || [];
+      UI.clear(storageSelect); const profiles = App.profiles || [];
       if (!profiles.length) { storageSelect.appendChild(UI.el("option", { value: "", text: "—" })); storageSelect.disabled = true; return; }
       storageSelect.disabled = false;
       if (!state.storageProfile || !profiles.some((p) => p.id === state.storageProfile)) state.storageProfile = App.profileId() || profiles[0].id;
@@ -316,19 +334,15 @@
       if (!state.repo || !state.repos.some((r) => r.slug === state.repo)) state.repo = state.repos[0].slug;
       state.repos.forEach((r) => repoSelect.appendChild(UI.el("option", { value: r.slug, selected: r.slug === state.repo, text: r.label })));
     }
-    async function loadRepos() {
-      /* Solo prepara la lista de repos; no abre ningún proyecto por defecto. */
-      try { const d = await API.repos(); state.repos = d.repos || []; renderRepoOptions(); }
-      catch (e) { state.repos = []; renderRepoOptions(); }
-    }
+    async function loadRepos() { try { const d = await API.repos(); state.repos = d.repos || []; renderRepoOptions(); } catch (e) { state.repos = []; renderRepoOptions(); } }
 
-    /* ---------------------------------------------------------- editor */
+    /* ---------------------------------------------------------- editor + panel */
     const tabsBar = UI.el("div", { class: "vsc-tabs" });
     const breadcrumb = UI.el("div", { class: "vsc-breadcrumb" });
     const editorPane = UI.el("div", { class: "vsc-editor-pane" });
-    editorArea.appendChild(tabsBar);
-    editorArea.appendChild(breadcrumb);
-    editorArea.appendChild(editorPane);
+    const panel = UI.el("div", { class: "vsc-panel" });
+    editorArea.appendChild(tabsBar); editorArea.appendChild(breadcrumb);
+    editorArea.appendChild(editorPane); editorArea.appendChild(panel);
 
     function renderTabs() {
       UI.clear(tabsBar);
@@ -337,139 +351,196 @@
           window.Icons ? Icons.file(path, 14) : null,
           UI.el("span", { text: path.split("/").pop() }),
           state.dirty[path] ? UI.el("span", { class: "dotm" }) : null,
-          UI.el("span", {
-            class: "vsc-tab-close", text: "×",
-            onclick: (e) => {
-              e.stopPropagation();
-              state.tabs = state.tabs.filter((p) => p !== path);
-              delete state.dirty[path];
-              Store.set({ ideTabs: state.tabs });
-              if (state.active === path) state.active = state.tabs[0] || null;
-              renderAll();
-              if (state.active) openFile(state.active, true);
-            }
-          })
+          UI.el("span", { class: "vsc-tab-close", text: "×", onclick: (e) => { e.stopPropagation(); closeTab(path); } })
         ]);
         tab.addEventListener("click", () => openFile(path));
         tabsBar.appendChild(tab);
       });
     }
+    function closeTab(path) {
+      state.tabs = state.tabs.filter((p) => p !== path); delete state.dirty[path];
+      if (state.active === path) state.active = state.tabs[0] || null;
+      renderAll(); if (state.active) openFile(state.active, true);
+    }
+    function closeActiveTab() { if (state.active) closeTab(state.active); }
 
     function renderBreadcrumb() {
       UI.clear(breadcrumb);
       if (!state.active) return;
-      const parts = state.active.split("/");
-      parts.forEach((p, i) => {
+      state.active.split("/").forEach((p, i, arr) => {
         breadcrumb.appendChild(UI.el("span", { class: "vsc-crumb", text: p }));
-        if (i < parts.length - 1) breadcrumb.appendChild(UI.el("span", { class: "vsc-crumb-sep", text: "›" }));
+        if (i < arr.length - 1) breadcrumb.appendChild(UI.el("span", { class: "vsc-crumb-sep", text: "›" }));
       });
     }
 
-    /* Editor con resaltado: <pre> coloreado detrás de un textarea transparente. */
     let codeTA = null, codeHL = null, gutterInner = null;
+    function rawUrl(path) {
+      if (state.source === "storage") { const p = path.split("/"); return "/api/storage/raw?profile=" + enc(state.storageProfile) + "&kind=" + enc(p[0]) + "&name=" + enc(p.slice(1).join("/")); }
+      if (state.source === "repo") return "/api/workspace/raw?path=" + enc(".ely/repos/" + state.repo + "/" + path);
+      return "/api/workspace/raw?path=" + enc(path);
+    }
+
     function renderEditor() {
       UI.clear(editorPane);
+      codeTA = null;
       if (!state.active) { renderWelcome(); return; }
+      const ext = (state.active.split(".").pop() || "").toLowerCase();
+      if (PREVIEW.includes(ext)) { renderPreview(ext); return; }
       const doc = state.docs[state.active];
-      const lang = (state.active.split(".").pop() || "").toLowerCase();
-
-      const wrap = UI.el("div", { class: "code-wrap" });
+      const wrap = UI.el("div", { class: "code-wrap" + (state.wordWrap ? " wrap" : "") });
       const gutter = UI.el("div", { class: "code-gutter" });
       gutterInner = UI.el("div", { class: "code-gutter-inner", text: "1" });
       gutter.appendChild(gutterInner);
       const hl = UI.el("pre", { class: "code-hl" });
       codeHL = UI.el("code", { class: "code-hl-inner" });
       hl.appendChild(codeHL);
-      codeTA = UI.el("textarea", { class: "code-ta", spellcheck: "false", wrap: "off" });
+      codeTA = UI.el("textarea", { class: "code-ta", spellcheck: "false", wrap: state.wordWrap ? "soft" : "off" });
       codeTA.value = doc ? doc.content : "";
-      wrap.appendChild(gutter);
-      wrap.appendChild(hl);
-      wrap.appendChild(codeTA);
+      wrap.appendChild(gutter); wrap.appendChild(hl); wrap.appendChild(codeTA);
       editorPane.appendChild(wrap);
-
       function paint() {
         const text = codeTA.value;
-        codeHL.innerHTML = (window.Syntax ? Syntax.highlight(text, lang) : text.replace(/&/g, "&amp;").replace(/</g, "&lt;")) + "\n";
-        const lines = text.split("\n").length;
-        gutterInner.textContent = Array.from({ length: lines }, (_, i) => i + 1).join("\n");
+        codeHL.innerHTML = (window.Syntax ? Syntax.highlight(text, ext) : text.replace(/&/g, "&amp;").replace(/</g, "&lt;")) + "\n";
+        gutterInner.textContent = Array.from({ length: text.split("\n").length }, (_, i) => i + 1).join("\n");
       }
       function sync() {
-        const st = codeTA.scrollTop, sl = codeTA.scrollLeft;
-        codeHL.style.transform = "translate(" + (-sl) + "px," + (-st) + "px)";
-        gutterInner.style.transform = "translateY(" + (-st) + "px)";
+        codeHL.style.transform = "translate(" + (-codeTA.scrollLeft) + "px," + (-codeTA.scrollTop) + "px)";
+        gutterInner.style.transform = "translateY(" + (-codeTA.scrollTop) + "px)";
       }
-      codeTA.addEventListener("input", () => {
-        if (!state.active) return;
-        state.dirty[state.active] = true;
-        paint(); updateStatus(); renderTabs();
-      });
+      codeTA.addEventListener("input", () => { if (!state.active) return; state.dirty[state.active] = true; paint(); updateStatus(); renderTabs(); });
       codeTA.addEventListener("scroll", sync);
       codeTA.addEventListener("keydown", (e) => {
-        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(); }
-        if (e.key === "Tab") {
-          e.preventDefault();
-          const s = codeTA.selectionStart;
-          codeTA.setRangeText("  ", s, codeTA.selectionEnd, "end");
-          codeTA.dispatchEvent(new Event("input"));
-        }
+        if (e.key === "Tab") { e.preventDefault(); const s = codeTA.selectionStart; codeTA.setRangeText("  ", s, codeTA.selectionEnd, "end"); codeTA.dispatchEvent(new Event("input")); }
       });
       paint(); sync();
     }
 
+    /* Vista previa a pantalla completa (no modal). */
+    function renderPreview(ext) {
+      const url = rawUrl(state.active);
+      const box = UI.el("div", { class: "vsc-preview" });
+      if (ext === "pdf") box.appendChild(UI.el("iframe", { src: url, class: "vsc-preview-frame" }));
+      else box.appendChild(UI.el("img", { src: url, class: "vsc-preview-img", alt: state.active }));
+      editorPane.appendChild(box);
+    }
+
     function renderWelcome() {
-      const welcome = UI.el("div", { class: "vsc-welcome" }, [
+      editorPane.appendChild(UI.el("div", { class: "vsc-welcome" }, [
         UI.el("div", { class: "vsc-welcome-logo", text: "◈" }),
         UI.el("h2", { text: "Ely IDE" }),
         UI.el("p", { class: "muted", text: T("ide.welcome") }),
         UI.el("div", { class: "vsc-welcome-actions" }, [
-          UI.el("button", { class: "vsc-welcome-btn", text: T("ide.openFolder"), onclick: () => { loadProject("workspace"); setActivity("explorer"); } }),
+          UI.el("button", { class: "vsc-welcome-btn", text: T("ide.openFolder"), onclick: openFolderFromComputer }),
+          UI.el("button", { class: "vsc-welcome-btn", text: T("ide.openFile"), onclick: openFromComputer }),
           UI.el("button", { class: "vsc-welcome-btn", text: T("ide.openStorage"), onclick: openStorageModal }),
           UI.el("button", { class: "vsc-welcome-btn", text: T("ide.newProject"), onclick: createProjectModal })
+        ]),
+        UI.el("div", { class: "vsc-welcome-keys" }, [
+          UI.el("span", { text: T("ide.terminal") + "  Ctrl+J / Ctrl+Ñ" }),
+          UI.el("span", { text: T("ide.goToFile") + "  Ctrl+P" }),
+          UI.el("span", { text: T("ide.commandPalette") + "  Ctrl+Shift+P" })
         ])
-      ]);
-      editorPane.appendChild(welcome);
+      ]));
     }
 
-    /* ---------------------------------------------------------- estado */
+    /* ---------------------------------------------------------- panel inferior */
+    const PANEL_TABS = [["problems", T("ide.problems")], ["output", T("ide.output")], ["debug", T("ide.debugConsole")], ["terminal", T("ide.terminal")], ["ports", T("ide.ports")]];
+    let termOut = null, termInput = null;
+    function renderPanel() {
+      UI.clear(panel);
+      panel.style.display = state.panel.open ? "" : "none";
+      if (!state.panel.open) return;
+      const tabs = UI.el("div", { class: "vsc-panel-tabs" });
+      PANEL_TABS.forEach(([id, label]) => {
+        const b = UI.el("button", { class: "vsc-panel-tab" + (state.panel.tab === id ? " on" : ""), text: label });
+        b.addEventListener("click", () => { state.panel.tab = id; renderPanel(); });
+        tabs.appendChild(b);
+      });
+      tabs.appendChild(UI.el("div", { style: { flex: "1" } }));
+      tabs.appendChild(UI.el("button", { class: "vsc-panel-x", text: "×", title: T("common.close"), onclick: () => { state.panel.open = false; renderPanel(); } }));
+      panel.appendChild(tabs);
+      const pbody = UI.el("div", { class: "vsc-panel-body" });
+      panel.appendChild(pbody);
+      if (state.panel.tab === "terminal") renderTerminal(pbody);
+      else pbody.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ide.panelEmpty") }));
+    }
+    function openPanel(tab) { state.panel.open = true; state.panel.tab = tab || state.panel.tab; renderPanel(); if (tab === "terminal" && termInput) termInput.focus(); }
+    function togglePanel(tab) { if (state.panel.open && (!tab || state.panel.tab === tab)) state.panel.open = false; else { state.panel.open = true; if (tab) state.panel.tab = tab; } renderPanel(); if (state.panel.open && state.panel.tab === "terminal" && termInput) termInput.focus(); }
+
+    function renderTerminal(pbody) {
+      termOut = UI.el("div", { class: "vsc-term-out" });
+      termOut.appendChild(UI.el("div", { class: "vsc-term-line muted", text: "Ely terminal · " + T("ide.termHint") }));
+      const line = UI.el("div", { class: "vsc-term-line" });
+      const prompt = UI.el("span", { class: "vsc-term-prompt", text: promptText() });
+      termInput = UI.el("input", { class: "vsc-term-input", spellcheck: "false" });
+      line.appendChild(prompt); line.appendChild(termInput);
+      pbody.appendChild(termOut); pbody.appendChild(line);
+      termInput.addEventListener("keydown", async (e) => {
+        if (e.key === "Enter") {
+          const cmd = termInput.value; termInput.value = "";
+          state.history.push(cmd); state.histIdx = state.history.length;
+          await runTerm(cmd, prompt);
+        } else if (e.key === "ArrowUp") { e.preventDefault(); if (state.histIdx > 0) termInput.value = state.history[--state.histIdx] || ""; }
+        else if (e.key === "ArrowDown") { e.preventDefault(); if (state.histIdx < state.history.length) termInput.value = state.history[++state.histIdx] || ""; }
+      });
+      pbody.addEventListener("click", () => termInput.focus());
+      setTimeout(() => termInput.focus(), 30);
+    }
+    function promptText() { return (state.termCwd ? state.termCwd : "workspace") + " $"; }
+    async function runTerm(cmd, promptEl) {
+      termOut.appendChild(UI.el("div", { class: "vsc-term-line" }, [UI.el("span", { class: "vsc-term-prompt", text: promptEl.textContent }), UI.el("span", { text: " " + cmd })]));
+      if (cmd.trim() === "clear") { UI.clear(termOut); return; }
+      try {
+        const r = await API.terminal(cmd, state.termCwd);
+        state.termCwd = r.cwd || "";
+        if (r.stdout) termOut.appendChild(UI.el("pre", { class: "vsc-term-pre", text: r.stdout }));
+        if (r.stderr) termOut.appendChild(UI.el("pre", { class: "vsc-term-pre err", text: r.stderr }));
+      } catch (e) { termOut.appendChild(UI.el("pre", { class: "vsc-term-pre err", text: e.message })); }
+      if (promptEl) promptEl.textContent = promptText();
+      termOut.scrollTop = termOut.scrollHeight;
+    }
+
+    /* ---------------------------------------------------------- estado / layout */
     function updateStatus() {
       UI.clear(statusbar);
       const ext = (state.active || "").split(".").pop();
       const doc = state.docs[state.active];
-      statusbar.appendChild(UI.el("span", { class: "vsc-sb-item", text: "⑂ main" }));
+      statusbar.appendChild(UI.el("span", { class: "vsc-sb-item", text: "⑂ " + (state.projectRoot || "main") }));
       statusbar.appendChild(UI.el("span", { class: "vsc-sb-item", text: "⊗ 0  ⚠ 0" }));
       statusbar.appendChild(UI.el("div", { style: { flex: "1" } }));
       if (doc) {
         statusbar.appendChild(UI.el("span", { class: "vsc-sb-item", text: "Ln " + (doc.lines || 1) + ", Col 1" }));
         statusbar.appendChild(UI.el("span", { class: "vsc-sb-item", text: T("ide.spaces") + ": 2" }));
         statusbar.appendChild(UI.el("span", { class: "vsc-sb-item", text: "UTF-8" }));
-        statusbar.appendChild(UI.el("span", { class: "vsc-sb-item", text: "LF" }));
         statusbar.appendChild(UI.el("span", { class: "vsc-sb-item", text: "{} " + (LANG[ext] || ext || "text") }));
       }
       statusbar.appendChild(UI.el("span", { class: "vsc-sb-item", text: state.dirty[state.active] ? "●" : "" }));
     }
+    function toggleLayout(key) {
+      state.layout[key] = !state.layout[key];
+      menubar.style.display = state.layout.menubar ? "" : "none";
+      activity.style.display = state.layout.activity ? "" : "none";
+      sidebar.style.display = state.layout.sidebar ? "" : "none";
+      statusbar.style.display = state.layout.status ? "" : "none";
+    }
+    function toggleWrap() { state.wordWrap = !state.wordWrap; renderEditor(); }
 
     /* ---------------------------------------------------------- abrir/guardar */
     async function openFile(path, force) {
       if (!path) return;
       const ext = (path.split(".").pop() || "").toLowerCase();
-      if (RICH_EXT.includes(ext) && window.FileViewer) {
-        if (state.source === "storage") { const p = path.split("/"); FileViewer.openStorage(state.storageProfile, p[0], p.slice(1).join("/")); }
-        else if (state.source === "repo") FileViewer.openWorkspace(".ely/repos/" + state.repo + "/" + path);
-        else FileViewer.openWorkspace(path);
-        return;
-      }
       state.active = path;
-      Store.set({ ideFile: path });
-      if (!state.tabs.includes(path)) state.tabs = [path, ...state.tabs].slice(0, 8);
-      Store.set({ ideTabs: state.tabs });
+      if (!state.tabs.includes(path)) state.tabs = [path, ...state.tabs].slice(0, 10);
+      state.histIdx = state.history.length;
       renderTabs(); renderBreadcrumb();
+      if (PREVIEW.includes(ext)) { renderEditor(); updateStatus(); return; }
       if (state.docs[path]) { renderEditor(); updateStatus(); return; }
       try {
         let doc;
         if (state.source === "repo") doc = await API.repoFile(state.repo, path);
         else if (state.source === "storage") {
           const p = path.split("/");
-          doc = await API.request("/storage/file?profile=" + encodeURIComponent(state.storageProfile) + "&kind=" + encodeURIComponent(p[0]) + "&name=" + encodeURIComponent(p.slice(1).join("/")));
+          doc = await API.request("/storage/file?profile=" + enc(state.storageProfile) + "&kind=" + enc(p[0]) + "&name=" + enc(p.slice(1).join("/")));
           if (doc.binary) throw Object.assign(new Error("binario"), { status: 415 });
           if (!doc.lines) doc.lines = (doc.content || "").split("\n").length;
         } else doc = await API.file(path);
@@ -478,8 +549,7 @@
         renderTree();
       } catch (err) {
         UI.toast("err", T("ide.cantOpen"), err.message);
-        state.tabs = state.tabs.filter((p) => p !== path);
-        state.active = state.tabs[0] || null;
+        state.tabs = state.tabs.filter((p) => p !== path); state.active = state.tabs[0] || null;
         renderAll();
       }
     }
@@ -489,68 +559,123 @@
       if (state.source !== "workspace") { UI.toast("warn", T("ide.readOnly")); return; }
       try {
         const result = await API.saveFile(state.active, codeTA.value);
-        state.docs[state.active].content = codeTA.value;
-        delete state.dirty[state.active];
+        state.docs[state.active].content = codeTA.value; delete state.dirty[state.active];
         updateStatus(); renderTabs(); renderTree();
         UI.toast("ok", T("ide.saved"), state.active);
       } catch (err) { UI.toast("err", T("ide.notSaved"), err.message); }
     }
-
-    function runActive() {
-      if (!state.active) { UI.toast("warn", T("ide.openFirst")); return; }
-      UI.toast("warn", T("ide.runSoon"));
+    async function saveAll() { for (const p of Object.keys(state.dirty)) { state.active = p; renderEditor(); await save(); } }
+    function saveAs() {
+      if (!state.active || !codeTA) return;
+      const input = UI.el("input", { type: "text", value: state.active });
+      const ref = UI.modal({ title: T("ide.saveAs"), body: input, footer: [UI.btn(t("common.cancel"), () => ref.close(), { ghost: true }), UI.btn(t("common.save"), async () => { const name = input.value.trim(); if (!name) return; await API.saveFile(name, codeTA.value); ref.close(); UI.toast("ok", T("ide.saved"), name); state.active = null; openFile(name); loadTree(); }, { primary: true })] });
+    }
+    function newFileModal(ext) {
+      const input = UI.el("input", { type: "text", placeholder: "archivo" + ext });
+      const ref = UI.modal({ title: T("ide.newFile"), body: input, footer: [UI.btn(t("common.cancel"), () => ref.close(), { ghost: true }), UI.btn(T("ide.create"), async () => { let name = input.value.trim(); if (!name) return; if (ext && !name.includes(".")) name += ext; await API.saveFile(name, ""); ref.close(); state.opened = true; state.source = "workspace"; await loadTree(); openFile(name); }, { primary: true })] });
+      setTimeout(() => input.focus(), 50);
     }
 
-    /* ---------------------------------------------------------- File: acciones */
+    /* ---------------------------------------------------------- editor cmds */
+    function editorCmd(c) { if (!codeTA) return; codeTA.focus(); document.execCommand(c); codeTA.dispatchEvent(new Event("input")); }
+    async function pasteClip() { if (!codeTA) return; try { const txt = await navigator.clipboard.readText(); const s = codeTA.selectionStart; codeTA.setRangeText(txt, s, codeTA.selectionEnd, "end"); codeTA.dispatchEvent(new Event("input")); } catch (e) { soon(); } }
+    function findInFile() { if (!codeTA) return; const q = prompt(T("ide.find")); if (!q) return; const idx = codeTA.value.indexOf(q); if (idx >= 0) { codeTA.focus(); codeTA.setSelectionRange(idx, idx + q.length); } else UI.toast("warn", T("ide.noResults")); }
+    function replaceInFile() { if (!codeTA) return; const q = prompt(T("ide.find")); if (!q) return; const r = prompt(T("ide.replace")); if (r == null) return; codeTA.value = codeTA.value.split(q).join(r); codeTA.dispatchEvent(new Event("input")); }
+    function toggleComment() {
+      if (!codeTA) return;
+      const ext = (state.active.split(".").pop() || "").toLowerCase();
+      const ch = ["py", "sh", "rb", "yaml", "yml"].includes(ext) ? "#" : "//";
+      const s = codeTA.selectionStart, e = codeTA.selectionEnd;
+      const start = codeTA.value.lastIndexOf("\n", s - 1) + 1;
+      const end = codeTA.value.indexOf("\n", e); const stop = end === -1 ? codeTA.value.length : end;
+      const block = codeTA.value.slice(start, stop);
+      const lines = block.split("\n");
+      const allCommented = lines.every((l) => l.trim().startsWith(ch) || !l.trim());
+      const out = lines.map((l) => !l.trim() ? l : (allCommented ? l.replace(new RegExp("^(\\s*)" + ch + " ?"), "$1") : l.replace(/^(\s*)/, "$1" + ch + " "))).join("\n");
+      codeTA.setRangeText(out, start, stop, "end"); codeTA.dispatchEvent(new Event("input"));
+    }
+    function lineOp(op) {
+      if (!codeTA) return;
+      const v = codeTA.value, s = codeTA.selectionStart;
+      const ls = v.lastIndexOf("\n", s - 1) + 1; let le = v.indexOf("\n", s); if (le === -1) le = v.length;
+      const line = v.slice(ls, le);
+      if (op === "copyDown") codeTA.setRangeText(line + "\n" + line, ls, le, "end");
+      else if (op === "copyUp") codeTA.setRangeText(line + "\n" + line, ls, le, "end");
+      else if (op === "dup") codeTA.setRangeText(line + "\n" + line, ls, le, "end");
+      else if (op === "moveUp" && ls > 0) { const ps = v.lastIndexOf("\n", ls - 2) + 1; const prev = v.slice(ps, ls - 1); codeTA.setRangeText(line + "\n" + prev, ps, le, "end"); }
+      else if (op === "moveDown" && le < v.length) { const ns = le + 1; let ne = v.indexOf("\n", ns); if (ne === -1) ne = v.length; const next = v.slice(ns, ne); codeTA.setRangeText(next + "\n" + line, ls, ne, "end"); }
+      codeTA.dispatchEvent(new Event("input"));
+    }
+    function goToLine() { if (!codeTA) return; const n = parseInt(prompt(T("ide.goToLine")), 10); if (!n) return; const lines = codeTA.value.split("\n"); let pos = 0; for (let i = 0; i < Math.min(n - 1, lines.length); i++) pos += lines[i].length + 1; codeTA.focus(); codeTA.setSelectionRange(pos, pos); }
+    function tabHistory(dir) { const i = state.tabs.indexOf(state.active); const n = state.tabs[i + dir]; if (n) openFile(n); }
+
+    /* ---------------------------------------------------------- paletas */
+    function quickOpen() {
+      const tree = state.tree; if (!tree) { soon(); return; }
+      const files = (tree.entries || []).filter((e) => e.type === "file");
+      const input = UI.el("input", { type: "text", placeholder: T("ide.goToFile") });
+      const list = UI.el("div", { class: "vsc-tree", style: { maxHeight: "300px" } });
+      const draw = (q) => { UI.clear(list); files.filter((f) => f.path.toLowerCase().includes(q.toLowerCase())).slice(0, 40).forEach((f) => { const n = UI.el("div", { class: "vsc-tree-item" }, [window.Icons ? Icons.file(f.path) : null, UI.el("span", { class: "trunc", text: f.path })]); n.addEventListener("click", () => { ref.close(); state.source = "workspace"; state.projectRoot = null; openFile(f.path); }); list.appendChild(n); }); };
+      input.addEventListener("input", () => draw(input.value));
+      const ref = UI.modal({ title: T("ide.goToFile"), body: UI.el("div", { class: "stack" }, [input, list]) });
+      draw(""); setTimeout(() => input.focus(), 50);
+    }
+    function commandPalette() {
+      const cmds = [
+        [T("ide.openFolder"), openFolderFromComputer], [T("ide.openFile"), openFromComputer],
+        [T("ide.newProject"), createProjectModal], [T("ide.terminal"), () => openPanel("terminal")],
+        [T("ide.search"), () => setActivity("search")], [T("ide.wordWrap"), toggleWrap],
+        [T("ide.save"), save], [T("ide.goToFile"), quickOpen]
+      ];
+      const list = UI.el("div", { class: "vsc-tree" });
+      cmds.forEach(([label, fn]) => { const n = UI.el("div", { class: "vsc-tree-item", text: label }); n.addEventListener("click", () => { ref.close(); fn(); }); list.appendChild(n); });
+      const ref = UI.modal({ title: T("ide.commandPalette"), body: list });
+    }
+
+    /* ---------------------------------------------------------- abrir desde ordenador */
+    function readB64(file) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1] || ""); r.onerror = rej; r.readAsDataURL(file); }); }
     function openFromComputer() {
       const input = UI.el("input", { type: "file", multiple: true, style: { display: "none" } });
       document.body.appendChild(input);
       input.addEventListener("change", async () => {
-        const files = Array.from(input.files || []);
-        for (const file of files) {
-          try {
-            const text = await file.text();
-            await API.saveFile(file.name, text);
-            UI.toast("ok", T("ide.uploaded"), file.name);
-          } catch (e) { UI.toast("err", T("ide.notSaved"), e.message); }
-        }
-        input.remove();
+        const files = Array.from(input.files || []); input.remove();
         if (!files.length) return;
-        state.opened = true;
-        state.source = "workspace"; sourceSelect.value = "workspace";
-        localStorage.setItem("ely.ideSource", "workspace");
-        renderAll();
-        loadTree();
+        for (const f of files) { try { await API.uploadWorkspace(f.name, await readB64(f)); } catch (e) { UI.toast("err", T("ide.notSaved"), e.message); } }
+        state.opened = true; state.source = "workspace"; state.projectRoot = null;
+        renderAll(); await loadTree(); openFile(files[0].name);
       });
       input.click();
     }
+    function openFolderFromComputer() {
+      const input = UI.el("input", { type: "file", webkitdirectory: "", multiple: true, style: { display: "none" } });
+      document.body.appendChild(input);
+      input.addEventListener("change", async () => {
+        let files = Array.from(input.files || []); input.remove();
+        files = files.filter((f) => { const p = f.webkitRelativePath || f.name; return !/(^|\/)(node_modules|\.git|dist|build|__pycache__)\//.test(p); }).slice(0, 300);
+        if (!files.length) return;
+        const rootName = (files[0].webkitRelativePath || files[0].name).split("/")[0];
+        UI.toast("ok", T("ide.loadingFolder"), rootName);
+        for (const f of files) { const rel = f.webkitRelativePath || f.name; try { await API.uploadWorkspace(rel, await readB64(f)); } catch (e) { /* ignora archivo individual */ } }
+        pushRecent(rootName);
+        state.opened = true; state.source = "workspace"; state.projectRoot = rootName; state.openDirs = new Set();
+        renderAll(); await loadTree();
+      });
+      input.click();
+    }
+    function openProjectRoot(name) { state.opened = true; state.source = "workspace"; state.projectRoot = name; state.openDirs = new Set(); renderAll(); loadTree(); }
 
     function openStorageModal() {
       const profile = state.storageProfile || App.profileId();
-      const body = UI.el("div", { class: "stack" });
-      body.appendChild(UI.loading(T("common.loading")));
+      const body = UI.el("div", { class: "stack" }); body.appendChild(UI.loading(T("common.loading")));
       const ref = UI.modal({ title: T("ide.openStorage"), wide: true, body, footer: [UI.btn(t("common.close"), () => ref.close(), { ghost: true })] });
-      API.request("/storage/tree?profile=" + encodeURIComponent(profile)).then((tree) => {
+      API.request("/storage/tree?profile=" + enc(profile)).then((tree) => {
         UI.clear(body);
         const entries = (tree.entries || []).filter((e) => e.type !== "dir");
         if (!entries.length) { body.appendChild(UI.el("div", { class: "muted", text: T("ide.emptyWorkspace") })); return; }
         const list = UI.el("div", { class: "vsc-tree" });
         entries.forEach((entry) => {
-          const node = UI.el("div", { class: "vsc-tree-item" }, [
-            window.Icons ? Icons.file(entry.path) : null,
-            UI.el("span", { class: "trunc", text: entry.path }),
-            UI.el("span", { class: "muted", style: { marginLeft: "auto", fontSize: "10px" }, text: UI.bytes(entry.size) })
-          ]);
-          node.addEventListener("click", () => {
-            ref.close();
-            state.opened = true;
-            state.source = "storage"; state.storageProfile = profile;
-            sourceSelect.value = "storage";
-            localStorage.setItem("ely.ideSource", "storage");
-            renderAll();
-            loadStorageTree();
-            openFile(entry.path);
-          });
+          const node = UI.el("div", { class: "vsc-tree-item" }, [window.Icons ? Icons.file(entry.path) : null, UI.el("span", { class: "trunc", text: entry.path }), UI.el("span", { class: "muted", style: { marginLeft: "auto", fontSize: "10px" }, text: UI.bytes(entry.size) })]);
+          node.addEventListener("click", () => { ref.close(); state.opened = true; state.source = "storage"; state.storageProfile = profile; state.projectRoot = null; sourceSelect.value = "storage"; renderAll(); loadStorageTree(); openFile(entry.path); });
           list.appendChild(node);
         });
         body.appendChild(list);
@@ -559,68 +684,47 @@
 
     function createProjectModal() {
       const nameInput = UI.el("input", { type: "text", placeholder: "mi-proyecto" });
-      const templateSelect = UI.el("select", {}, [
-        UI.el("option", { value: "blank", text: T("ide.tplBlank") }),
-        UI.el("option", { value: "web", text: T("ide.tplWeb") }),
-        UI.el("option", { value: "python", text: T("ide.tplPython") }),
-        UI.el("option", { value: "node", text: T("ide.tplNode") })
-      ]);
-      const field = (label, control) => UI.el("label", { class: "stack", style: { gap: "4px" } }, [
-        UI.el("span", { class: "muted", style: { fontSize: "11.5px" }, text: label }), control
-      ]);
-      const ref = UI.modal({
-        title: T("ide.newProject"),
-        body: UI.el("div", { class: "stack" }, [
-          field(T("ide.projectName"), nameInput),
-          field(T("ide.template"), templateSelect)
-        ]),
-        footer: [
-          UI.btn(t("common.cancel"), () => ref.close(), { ghost: true }),
-          UI.btn(T("ide.create"), async () => {
-            const name = nameInput.value.trim();
-            if (!name) return;
-            try {
-              const result = await API.createProject(name, templateSelect.value);
-              ref.close();
-              UI.toast("ok", T("ide.projectCreated"), result.path);
-              state.opened = true;
-              state.source = "workspace"; sourceSelect.value = "workspace";
-              localStorage.setItem("ely.ideSource", "workspace");
-              renderAll();
-              await loadTree();
-              openFile(result.path + "/README.md");
-            } catch (e) { UI.toast("err", T("ide.notSaved"), e.message); }
-          }, { primary: true })
-        ]
-      });
+      const templateSelect = UI.el("select", {}, [UI.el("option", { value: "blank", text: T("ide.tplBlank") }), UI.el("option", { value: "web", text: T("ide.tplWeb") }), UI.el("option", { value: "python", text: T("ide.tplPython") }), UI.el("option", { value: "node", text: T("ide.tplNode") })]);
+      const field = (label, control) => UI.el("label", { class: "stack", style: { gap: "4px" } }, [UI.el("span", { class: "muted", style: { fontSize: "11.5px" }, text: label }), control]);
+      const ref = UI.modal({ title: T("ide.newProject"), body: UI.el("div", { class: "stack" }, [field(T("ide.projectName"), nameInput), field(T("ide.template"), templateSelect)]), footer: [
+        UI.btn(t("common.cancel"), () => ref.close(), { ghost: true }),
+        UI.btn(T("ide.create"), async () => {
+          const name = nameInput.value.trim(); if (!name) return;
+          try { const result = await API.createProject(name, templateSelect.value); ref.close(); UI.toast("ok", T("ide.projectCreated"), result.path); pushRecent(name); state.opened = true; state.source = "workspace"; state.projectRoot = name; renderAll(); await loadTree(); openFile(name + "/README.md"); }
+          catch (e) { UI.toast("err", T("ide.notSaved"), e.message); }
+        }, { primary: true })
+      ] });
       setTimeout(() => nameInput.focus(), 60);
     }
 
-    /* ---------------------------------------------------------- render all */
-    function renderAll() { renderTabs(); renderBreadcrumb(); renderEditor(); updateStatus(); renderSidebar(); }
+    function closeProject() { state.opened = false; state.projectRoot = null; state.tabs = []; state.docs = {}; state.active = null; state.tree = null; renderAll(); }
+    function runActive() {
+      if (!state.active) { UI.toast("warn", T("ide.openFirst")); return; }
+      const ext = (state.active.split(".").pop() || "").toLowerCase();
+      const cmd = ext === "py" ? "python3 " + state.active : (ext === "js" ? "node " + state.active : null);
+      openPanel("terminal");
+      if (!cmd) { UI.toast("warn", T("ide.runSoon")); return; }
+      setTimeout(() => runTerm(cmd, { textContent: promptText() }), 60);
+    }
 
-    /* ---------------------------------------------------------- init */
-    /* No se carga ningún proyecto por defecto: el IDE arranca en el estado
-       «Ninguna carpeta abierta» y hay que abrir/crear uno explícitamente. */
+    function renderAll() { renderTabs(); renderBreadcrumb(); renderEditor(); updateStatus(); renderSidebar(); renderPanel(); }
+
+    /* ---------------------------------------------------------- init + atajos */
+    buildMenus();
     renderAll();
-    loadRepos().then(() => {
-      /* Única excepción: un archivo pedido explícitamente desde Repos/Búsqueda
-         (handoff). Eso sí cuenta como cargar un proyecto. */
-      const pending = localStorage.getItem("ely.ideOpenPath");
-      if (pending) {
-        localStorage.removeItem("ely.ideOpenPath");
-        state.opened = true;
-        state.source = "repo"; localStorage.setItem("ely.ideSource", "repo");
-        sourceSelect.value = "repo";
-        renderAll();
-        loadRepoTree();
-        openFile(pending.replace(/^\//, ""));
-      }
-    });
-
+    loadRepos();
     document.addEventListener("keydown", function shortcuts(e) {
       if (App.route !== "ide") return;
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(); }
+      const mod = e.ctrlKey || e.metaKey;
+      const k = e.key.toLowerCase();
+      if (mod && (k === "j" || e.key === "ñ" || e.key === "Ñ")) { e.preventDefault(); togglePanel("terminal"); return; }
+      if (mod && k === "s") { e.preventDefault(); save(); return; }
+      if (mod && k === "p" && !e.shiftKey) { e.preventDefault(); quickOpen(); return; }
+      if (mod && e.shiftKey && k === "p") { e.preventDefault(); commandPalette(); return; }
+      if (mod && k === "b") { e.preventDefault(); toggleLayout("sidebar"); return; }
+      if (mod && k === "o") { e.preventDefault(); openFromComputer(); return; }
+      if (mod && k === "g") { e.preventDefault(); goToLine(); return; }
+      if (e.altKey && k === "z") { e.preventDefault(); toggleWrap(); return; }
     });
 
     return root;

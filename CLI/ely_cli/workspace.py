@@ -159,6 +159,44 @@ def create_project(root: Path, name: str, template: str = "blank") -> dict[str, 
     return {"path": clean, "files": list(files), "created": True}
 
 
+def upload(root: Path, rel: str, data: bytes) -> dict[str, Any]:
+    """Guarda bytes (texto o binario) en el workspace, creando directorios."""
+    target = _safe(root, rel)
+    if len(data) > 20_000_000:
+        raise WorkspaceError(413, "Archivo demasiado grande (máx. 20 MB)")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(data)
+    return {"path": rel, "size": len(data), "saved": True}
+
+
+def run_command(root: Path, command: str, cwd: str = "") -> dict[str, Any]:
+    """Ejecuta un comando de shell en el workspace (terminal del IDE)."""
+    import subprocess
+    base = _safe(root, cwd) if cwd else root.resolve()
+    if not base.is_dir():
+        base = root.resolve()
+    cmd = str(command or "").strip()
+    if not cmd:
+        return {"stdout": "", "stderr": "", "code": 0, "cwd": cwd}
+    root = root.resolve()
+    if cmd == "cd" or cmd.startswith("cd "):
+        target = cmd[2:].strip().strip('"').strip("'")
+        new = root if not target or target == "~" else (base / target).resolve()
+        if new != root and root not in new.parents:
+            return {"stdout": "", "stderr": "cd: fuera del workspace", "code": 1, "cwd": cwd}
+        rel = "" if new == root else str(new.relative_to(root))
+        return {"stdout": "", "stderr": "", "code": 0, "cwd": rel}
+    try:
+        proc = subprocess.run(cmd, shell=True, cwd=str(base), capture_output=True,
+                              text=True, timeout=20)
+        return {"stdout": proc.stdout[-20000:], "stderr": proc.stderr[-20000:],
+                "code": proc.returncode, "cwd": cwd}
+    except subprocess.TimeoutExpired:
+        return {"stdout": "", "stderr": "tiempo de espera agotado (20 s)", "code": 124, "cwd": cwd}
+    except OSError as exc:
+        return {"stdout": "", "stderr": str(exc), "code": 1, "cwd": cwd}
+
+
 def search(root: Path, query: str, limit: int = 200) -> dict[str, Any]:
     """Búsqueda de texto en los archivos del workspace (case-insensitive)."""
     q = str(query or "").strip()

@@ -408,6 +408,24 @@ class ElyHandler(BaseHTTPRequestHandler):
             except workspace.WorkspaceError as exc:
                 raise ApiError(exc.status, str(exc)) from exc
 
+        if method == "POST" and route == "/workspace/upload":
+            import base64
+            body = self.read_json()
+            try:
+                data = base64.b64decode(body.get("content_b64") or "")
+            except Exception as exc:
+                raise ApiError(400, "content_b64 inválido") from exc
+            try:
+                return self.json(engine.upload_workspace(str(body.get("path") or ""), data))
+            except workspace.WorkspaceError as exc:
+                raise ApiError(exc.status, str(exc)) from exc
+
+        if method == "POST" and route == "/terminal/exec":
+            body = self.read_json()
+            return self.json(engine.run_command(
+                str(body.get("command") or ""), str(body.get("cwd") or "")
+            ))
+
         if method == "GET" and route == "/assets":
             return self.json(workspace.assets(engine.root))
 

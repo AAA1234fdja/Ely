@@ -153,6 +153,8 @@
     uploadStorage: (data) => request("/storage/upload", { method: "POST", body: data }),
     createProject: (name, template) => request("/workspace/project", { method: "POST", body: { name, template } }),
     searchWorkspace: (q) => request("/workspace/search?q=" + encodeURIComponent(q)),
+    uploadWorkspace: (path, content_b64) => request("/workspace/upload", { method: "POST", body: { path, content_b64 } }),
+    terminal: (command, cwd) => request("/terminal/exec", { method: "POST", body: { command, cwd } }),
     addPlanned: (data) => request("/storage/planned", { method: "POST", body: data }),
     deletePlanned: (id, profile) => request("/storage/planned/" + encodeURIComponent(id) + (profile ? "?profile=" + encodeURIComponent(profile) : ""), { method: "DELETE" }),
     memory: () => request("/memory"),
