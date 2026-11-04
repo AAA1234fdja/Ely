@@ -20,30 +20,17 @@
   const enc = encodeURIComponent;
 
   /* Catálogo de lenguajes (como el selector de modo de lenguaje de VS Code). */
-  const LANGS = [
-    ["plaintext", "Plain Text", "txt"], ["javascript", "JavaScript", "js"], ["typescript", "TypeScript", "ts"],
-    ["jsx", "JavaScript JSX", "jsx"], ["tsx", "TypeScript JSX", "tsx"], ["python", "Python", "py"],
-    ["html", "HTML", "html"], ["css", "CSS", "css"], ["scss", "SCSS", "scss"], ["json", "JSON", "json"],
-    ["markdown", "Markdown", "md"], ["yaml", "YAML", "yml"], ["xml", "XML", "xml"], ["svg", "SVG", "svg"],
-    ["sql", "SQL", "sql"], ["shell", "Shell Script", "sh"], ["rust", "Rust", "rs"], ["go", "Go", "go"],
-    ["java", "Java", "java"], ["c", "C", "c"], ["cpp", "C++", "cpp"], ["csharp", "C#", "cs"],
-    ["php", "PHP", "php"], ["ruby", "Ruby", "rb"], ["toml", "TOML", "toml"], ["ini", "Ini", "ini"],
-    ["dockerfile", "Dockerfile", "dockerfile"], ["csv", "CSV", "csv"], ["latex", "LaTeX", "tex"],
-    ["perl", "Perl", "pl"], ["swift", "Swift", "swift"], ["kotlin", "Kotlin", "kt"], ["lua", "Lua", "lua"],
-    ["r", "R", "r"], ["dart", "Dart", "dart"], ["powershell", "PowerShell", "ps1"], ["bat", "Batch", "bat"],
-    ["makefile", "Makefile", "mk"], ["graphql", "GraphQL", "graphql"], ["vue", "Vue", "vue"], ["svelte", "Svelte", "svelte"]
-  ];
-  const EXT2LANG = { txt: "plaintext", js: "javascript", mjs: "javascript", cjs: "javascript", ts: "typescript",
-    jsx: "jsx", tsx: "tsx", py: "python", html: "html", htm: "html", css: "css", scss: "scss", json: "json",
-    md: "markdown", yml: "yaml", yaml: "yaml", xml: "xml", svg: "svg", sql: "sql", sh: "shell", bash: "shell",
-    rs: "rust", go: "go", java: "java", c: "c", h: "c", cpp: "cpp", cc: "cpp", cs: "csharp", php: "php", rb: "ruby",
-    toml: "toml", ini: "ini", cfg: "ini", dockerfile: "dockerfile", csv: "csv", tex: "latex", pl: "perl",
-    swift: "swift", kt: "kotlin", lua: "lua", r: "r", dart: "dart", ps1: "powershell", bat: "bat", mk: "makefile",
-    graphql: "graphql", vue: "vue", svelte: "svelte" };
+  /* Catálogo de lenguajes: js/languages.js (más de 140 modos, como VS Code). */
+  const LANGS = (window.Languages && window.Languages.list) || [["plaintext", "Plain Text", "txt"]];
+  const EXT2LANG = (window.Languages && window.Languages.byExt) || { txt: "plaintext" };
+
+  /* El estado vive a nivel de módulo: cambiar de idioma o volver a la vista
+     no cierra el proyecto ni las pestañas (como en VS Code). */
+  let ideState = null;
 
   window.Views.ide = function (view, App) {
     const T = (k) => t(k);
-    const state = {
+    const state = ideState || (ideState = {
       source: "workspace", repo: localStorage.getItem("ely.ideRepo") || null,
       repos: [], repoTree: null,
       storageProfile: localStorage.getItem("ely.ideStorageProfile") || null,
@@ -51,6 +38,8 @@
       tabs: [], active: null, docs: {}, dirty: {},
       activity: "explorer", opened: false, projectRoot: null,
       openDirs: new Set(),
+      rootOpen: true, selected: null,
+      sections: { outline: false, timeline: false },
       sort: "name", hidden: false,
       langMode: {},
       panel: { open: false, tab: "terminal" },
@@ -58,7 +47,7 @@
       wordWrap: false, termCwd: "", history: [], histIdx: 0,
       untitledCount: 0, welcome: localStorage.getItem("ely.ideWelcome") !== "0",
       editorHint: localStorage.getItem("ely.ideEditorHint") !== "0"
-    };
+    });
     const A = () => window.A11y || null;
     const say = (msg, opts) => { if (window.A11y) A11y.announce(msg, opts); };
     const sig = (name, detail) => { if (window.A11y) A11y.signal(name, detail); };
@@ -69,9 +58,8 @@
     /* ---- modo de lenguaje (como VS Code) ---- */
     function langFor(path) {
       if (state.langMode[path]) return state.langMode[path];
+      if (window.Languages) return window.Languages.forPath(path);
       const base = (path || "").split("/").pop().toLowerCase();
-      if (base === "dockerfile") return "dockerfile";
-      if (base === "makefile") return "makefile";
       const ext = base.includes(".") ? base.split(".").pop() : "";
       return EXT2LANG[ext] || "plaintext";
     }
@@ -243,7 +231,10 @@
       btn.addEventListener("mouseenter", () => { if (document.querySelector(".vsc-dropdown.open")) { closeAllMenus(); drop.classList.add("open"); } });
       return wrap;
     }
-    document.addEventListener("pointerdown", (e) => { if (!e.target.closest(".vsc-menu")) closeAllMenus(); });
+    document.addEventListener("pointerdown", (e) => {
+      const target = e.target && e.target.closest ? e.target : null;
+      if (!target || !target.closest(".vsc-menu")) closeAllMenus();
+    });
 
     function recentProjects() { try { return JSON.parse(localStorage.getItem("ely.ideRecent") || "[]"); } catch (e) { return []; } }
     function pushRecent(name) {
@@ -343,7 +334,15 @@
         { label: T("ide.debugConsole"), action: () => openPanel("debug") },
         { label: T("ide.terminal"), key: "Ctrl+Ñ", action: () => openPanel("terminal") },
         "-",
-        { label: T("ide.wordWrap"), key: "Alt+Z", action: toggleWrap }
+        { label: T("ide.wordWrap"), key: "Alt+Z", action: toggleWrap },
+        "-",
+        { label: T("cmp.menu"), key: "Ctrl+Espacio", action: () => {
+          if (!window.Completion) return;
+          Completion.setEnabled(!Completion.enabled());
+          updateStatus();
+          UI.toast("ok", Completion.enabled() ? T("cmp.on") : T("cmp.off"));
+        } },
+        { label: T("ext.openManager"), action: () => App.navigate("extensions") }
       ]));
       menubar.appendChild(menu(T("ide.go"), [
         { label: T("ide.back"), key: "Alt+←", action: () => tabHistory(-1) },
@@ -362,6 +361,16 @@
         "-",
         { label: T("ide.toggleBreakpoint"), key: "F9", disabled: true },
         { label: T("ide.addConfig"), disabled: true }
+      ]));
+      menubar.appendChild(menu(T("ide.help"), [
+        { label: T("ide.welcomeTab"), action: showWelcome },
+        { label: T("ide.showAllCommands"), key: "Ctrl+Shift+P", action: commandPalette },
+        "-",
+        { label: T("ide.keyboardRef"), action: () => { if (window.A11y) A11y.openView("shortcuts"); } },
+        { label: T("a11y.helpTitle"), key: "Alt+F1", action: () => { if (window.A11y) A11y.help(); } },
+        "-",
+        { label: T("ide.reportIssue"), disabled: true },
+        { label: T("ide.about"), action: showAbout }
       ]));
       menubar.appendChild(UI.el("div", { style: { flex: "1" } }));
       menubar.appendChild(UI.el("button", { class: "vsc-menu-btn", html: "⌕", title: T("ide.search"), onclick: () => setActivity("search") }));
@@ -383,7 +392,8 @@
       activity.appendChild(b);
     });
     activity.appendChild(UI.el("div", { style: { flex: "1" } }));
-    activity.appendChild(UI.el("button", { class: "vsc-act-btn", title: T("nav.settings"), html: "⚙", onclick: () => App.navigate("settings") }));
+    activity.appendChild(UI.el("button", { class: "vsc-act-btn", title: T("nav.settings"), "aria-label": T("nav.settings"), html: "⚙",
+      onclick: () => Settings.openModal(App) }));
     function setActivity(id) {
       state.activity = id;
       activity.querySelectorAll(".vsc-act-btn").forEach((b, i) => {
@@ -404,7 +414,83 @@
       if (state.activity === "scm") return renderSCM();
       if (state.activity === "run") return renderRun();
       sidebar.appendChild(UI.el("div", { class: "vsc-side-title", text: T("ide.extensions").toUpperCase() }));
-      sidebar.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ide.extEmpty") }));
+      renderExtensionsPanel();
+    }
+
+    /* Panel real de extensiones: instalar, activar y ver permisos. */
+    function renderExtensionsPanel() {
+      const box = UI.el("div", { class: "vsc-ext" });
+      const input = UI.el("input", {
+        class: "vsc-search-input", placeholder: T("ext.installPlaceholder"),
+        "aria-label": T("ext.installPlaceholder")
+      });
+      const installBtn = UI.el("button", { class: "vsc-side-btn", text: T("ext.install") });
+      const doInstall = async () => {
+        const source = input.value.trim();
+        if (!source) return;
+        installBtn.disabled = true;
+        installBtn.textContent = T("ext.installing");
+        try {
+          const result = await ExtHost.install(source);
+          UI.toast("ok", T("ext.installed"), (result.extension || {}).name || source);
+          input.value = "";
+        } catch (err) {
+          UI.toast("err", T("ext.installFail"), err.message);
+        }
+        installBtn.disabled = false;
+        installBtn.textContent = T("ext.install");
+        renderSidebar();
+      };
+      installBtn.addEventListener("click", doInstall);
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") doInstall(); });
+      box.appendChild(input);
+      box.appendChild(installBtn);
+      box.appendChild(UI.el("button", {
+        class: "vsc-side-btn ghost", text: T("ext.openManager"),
+        onclick: () => App.navigate("extensions")
+      }));
+
+      if (!window.ExtHost) {
+        box.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ext.hostMissing") }));
+        sidebar.appendChild(box);
+        return;
+      }
+      const list = UI.el("div", { class: "vsc-ext-list", role: "list" });
+      const paint = () => {
+        UI.clear(list);
+        const rows = ExtHost.state.extensions || [];
+        if (!rows.length) {
+          list.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ext.none") }));
+          return;
+        }
+        rows.forEach((ext) => {
+          const L = ExtHost.localized(ext);
+          const row = UI.el("div", { class: "vsc-ext-item", role: "listitem" }, [
+            UI.el("div", { class: "grow" }, [
+              UI.el("div", { class: "vsc-ext-name", text: L.name }),
+              UI.el("div", { class: "vsc-ext-meta", text: ext.version + " · " + (ext.builtin ? T("ext.builtin") : T("ext.installedSource")) }),
+              ext.activationError ? UI.el("div", { class: "vsc-ext-err", text: ext.activationError }) : null
+            ]),
+            UI.el("button", {
+              class: "icon-btn", text: ext.enabled ? "◉" : "○",
+              title: ext.enabled ? T("ext.disable") : T("ext.enable"),
+              "aria-label": (ext.enabled ? T("ext.disable") : T("ext.enable")) + " " + L.name,
+              "aria-pressed": ext.enabled ? "true" : "false",
+              onclick: async () => {
+                try { await ExtHost.setEnabled(ext.id, !ext.enabled); } catch (err) { UI.toast("err", T("ext.fail"), err.message); }
+                renderSidebar();
+              }
+            })
+          ]);
+          list.appendChild(row);
+        });
+      };
+      paint();
+      const off = ExtHost.subscribe(() => { if (document.body.contains(list)) paint(); else off(); });
+      box.appendChild(list);
+      box.appendChild(UI.el("div", { class: "vsc-ext-note muted", text: T("ext.vsixNote") }));
+      sidebar.appendChild(box);
+      if (!ExtHost.state.loaded) ExtHost.refresh();
     }
 
     const sourceSelect = UI.el("select", { class: "vsc-select", onchange: (e) => { state.source = e.target.value; state.projectRoot = null; state.tabs = []; state.docs = {}; state.active = null; renderAll(); reloadSource(); } }, [
@@ -419,7 +505,18 @@
     const fileList = UI.el("div", { class: "vsc-tree" });
 
     function renderExplorer() {
-      sidebar.appendChild(UI.el("div", { class: "vsc-side-title", text: T("ide.explorer").toUpperCase() }));
+      /* Cabecera del panel con el menú "⋯" (como VS Code). */
+      sidebar.appendChild(UI.el("div", { class: "vsc-side-head" }, [
+        UI.el("div", { class: "vsc-side-title", text: T("ide.explorer").toUpperCase() }),
+        UI.el("button", {
+          class: "vsc-icon-btn", html: "&#8943;", title: T("ide.moreActions"),
+          "aria-label": T("ide.moreActions"), "aria-haspopup": "menu",
+          onclick: (event) => {
+            const r = event.currentTarget.getBoundingClientRect();
+            ctxMenu(r.left, r.bottom, explorerViewOps());
+          }
+        })
+      ]));
       if (!state.opened) {
         sidebar.appendChild(UI.el("div", { class: "vsc-nofolder" }, [
           UI.el("div", { class: "vsc-nofolder-title", text: T("ide.noFolder") }),
@@ -435,23 +532,243 @@
       repoSelect.style.display = state.source === "repo" ? "" : "none";
       storageSelect.style.display = state.source === "storage" ? "" : "none";
       sourceSelect.style.display = state.projectRoot ? "none" : "";
-      sidebar.appendChild(UI.el("div", { class: "vsc-side-controls" }, [
-        sourceSelect, repoSelect, storageSelect,
-        UI.el("button", { class: "icon-btn", html: "⟳", title: T("common.refresh"), onclick: reloadSource })
+      if (!state.projectRoot || state.source !== "workspace") {
+        sidebar.appendChild(UI.el("div", { class: "vsc-side-controls" }, [sourceSelect, repoSelect, storageSelect]));
+      }
+
+      /* Fila de la carpeta raíz con las 4 acciones de VS Code. */
+      const rootName = state.projectRoot
+        ? state.projectRoot.split("/").filter(Boolean).pop()
+        : state.source === "repo" ? (state.repo || "repo")
+          : state.source === "storage" ? (state.storageProfile || "storage")
+            : T("ide.workspace");
+      const caret = UI.el("span", { class: "vsc-caret", text: state.rootOpen ? "▾" : "▸" });
+      const toggle = UI.el("button", {
+        class: "vsc-root-toggle", "aria-expanded": state.rootOpen ? "true" : "false",
+        "aria-controls": "vsc-file-tree", title: rootName,
+        onclick: () => {
+          state.rootOpen = !state.rootOpen;
+          caret.textContent = state.rootOpen ? "▾" : "▸";
+          toggle.setAttribute("aria-expanded", state.rootOpen ? "true" : "false");
+          fileList.style.display = state.rootOpen ? "" : "none";
+          say(rootName + " · " + (state.rootOpen ? T("ide.expanded") : T("ide.collapsed")));
+        }
+      }, [caret, UI.el("span", { class: "vsc-root-name", text: String(rootName) })]);
+      const action = (icon, label, fn) => UI.el("button", {
+        class: "vsc-icon-btn", html: icon, title: label, "aria-label": label, onclick: fn
+      });
+      sidebar.appendChild(UI.el("div", { class: "vsc-root-row" }, [
+        toggle,
+        UI.el("div", { class: "vsc-root-actions" }, [
+          action("&#128196;", T("ide.newFile"), () => inlineCreate("file")),
+          action("&#128193;", T("ide.newFolder"), () => inlineCreate("dir")),
+          action("&#8635;", T("common.refresh"), () => { reloadSource(); say(T("common.refresh")); }),
+          action("&#8863;", T("ide.collapseAll"), collapseAll)
+        ])
       ]));
-      const sortSel = UI.el("select", { class: "vsc-select", onchange: (e) => { state.sort = e.target.value; renderTree(); } }, [
-        UI.el("option", { value: "name", selected: state.sort === "name", text: T("ide.sortName") }),
-        UI.el("option", { value: "type", selected: state.sort === "type", text: T("ide.sortType") }),
-        UI.el("option", { value: "size", selected: state.sort === "size", text: T("ide.sortSize") })
-      ]);
-      const hidBtn = UI.el("button", { class: "icon-btn", html: "👁", title: T("ide.showHidden"), onclick: () => { state.hidden = !state.hidden; renderTree(); } });
-      sidebar.appendChild(UI.el("div", { class: "vsc-side-controls" }, [sortSel, hidBtn]));
-      if (state.projectRoot) sidebar.appendChild(UI.el("div", { class: "vsc-project-name", text: state.projectRoot }));
+
+      fileList.id = "vsc-file-tree";
+      fileList.style.display = state.rootOpen ? "" : "none";
       sidebar.appendChild(fileList);
       renderTree();
-      const outline = UI.el("div", { class: "vsc-outline" });
-      sidebar.appendChild(outline);
-      renderOutline(outline);
+
+      /* Secciones plegables: Outline y Timeline (datos reales). */
+      const sections = UI.el("div", { class: "vsc-sections" });
+      sections.appendChild(explorerSection("outline", T("ide.outline"), loadOutline));
+      sections.appendChild(explorerSection("timeline", T("ide.timeline"), loadTimeline));
+      sidebar.appendChild(sections);
+    }
+
+    /* Menú "⋯" de la cabecera del Explorer. */
+    function explorerViewOps() {
+      return [
+        { label: T("ide.newFile"), action: () => inlineCreate("file") },
+        { label: T("ide.newFolder"), action: () => inlineCreate("dir") },
+        "-",
+        { label: T("common.refresh"), action: reloadSource },
+        { label: T("ide.collapseAll"), action: collapseAll },
+        "-",
+        { label: T("ide.sortName"), checked: state.sort === "name", action: () => { state.sort = "name"; renderTree(); } },
+        { label: T("ide.sortType"), checked: state.sort === "type", action: () => { state.sort = "type"; renderTree(); } },
+        { label: T("ide.sortSize"), checked: state.sort === "size", action: () => { state.sort = "size"; renderTree(); } },
+        { label: T("ide.showHidden"), checked: state.hidden, action: () => { state.hidden = !state.hidden; renderTree(); } },
+        "-",
+        { label: T("ide.openFolder"), action: openFolderFromComputer },
+        { label: T("ide.openFile"), action: openFromComputer }
+      ];
+    }
+
+    function collapseAll() {
+      state.openDirs.clear();
+      renderTree();
+      say(T("ide.collapseAll"));
+    }
+
+    /* Creation en línea dentro del árbol, como VS Code (sin prompt del navegador). */
+    function inlineCreate(kind, dir) {
+      if (!state.opened) { UI.toast("warn", T("ide.noFolder"), T("ide.noFolderHint")); return; }
+      if (state.activity !== "explorer") setActivity("explorer");
+      if (!state.rootOpen) {
+        state.rootOpen = true;
+        fileList.style.display = "";
+        const caretNode = sidebar.querySelector(".vsc-root-toggle .vsc-caret");
+        if (caretNode) caretNode.textContent = "▾";
+      }
+      const previous = fileList.querySelector(".vsc-inline-row");
+      if (previous) previous.remove();
+
+      const base = state.projectRoot ? state.projectRoot + "/" : "";
+      let target = dir;
+      if (target == null) {
+        const sel = state.selected;
+        target = sel ? (sel.isDir ? sel.path : sel.path.split("/").slice(0, -1).join("/")) : "";
+      }
+      if (base && target && target.startsWith(base)) target = target.slice(base.length);
+      const prefix = (base + (target ? target.replace(/\/$/, "") + "/" : ""));
+      const label = kind === "dir" ? T("ide.newFolder") : T("ide.newFile");
+      const input = UI.el("input", {
+        class: "vsc-inline-input", type: "text", placeholder: label,
+        "aria-label": label + (target ? " · " + target : "")
+      });
+      const row = UI.el("div", { class: "vsc-inline-row" }, [
+        UI.el("span", { class: "vsc-inline-icon", html: kind === "dir" ? "&#128193;" : "&#128196;" }),
+        input
+      ]);
+      if (target) row.title = prefix;
+      fileList.insertBefore(row, fileList.firstChild);
+      input.focus();
+      say(label + (target ? " · " + target : ""));
+
+      let done = false;
+      const finish = async (commit) => {
+        if (done) return;
+        done = true;
+        const name = input.value.trim();
+        row.remove();
+        if (!commit || !name) return;
+        const path = prefix + name;
+        try {
+          await API.ide(kind === "dir" ? "fs_mkdir" : "fs_create", { path: path });
+          if (target) state.openDirs.add(target);
+          await loadTree();
+          if (kind === "dir") {
+            UI.toast("ok", T("ide.folderCreated"), name);
+            say(T("ide.folderCreated") + ": " + name);
+          } else {
+            await openFile(path);
+            UI.toast("ok", T("ide.fileCreated"), name);
+            say(T("ide.fileCreated") + ": " + name);
+          }
+        } catch (err) {
+          UI.toast("err", T("ide.notSaved"), err.message);
+        }
+      };
+      input.addEventListener("keydown", (event) => {
+        event.stopPropagation();
+        if (event.key === "Enter") { event.preventDefault(); finish(true); }
+        else if (event.key === "Escape") { event.preventDefault(); finish(false); }
+      });
+      input.addEventListener("blur", () => setTimeout(() => finish(false), 80));
+    }
+
+    /* Sección plegable del Explorer (Outline / Timeline). */
+    function explorerSection(id, label, load) {
+      const open = !!state.sections[id];
+      const body = UI.el("div", { class: "vsc-section-body", id: "vsc-sec-" + id });
+      body.style.display = open ? "" : "none";
+      const caret = UI.el("span", { class: "vsc-caret", text: open ? "▾" : "▸" });
+      const head = UI.el("button", {
+        class: "vsc-section-head", "aria-expanded": open ? "true" : "false", "aria-controls": "vsc-sec-" + id,
+        onclick: () => {
+          state.sections[id] = !state.sections[id];
+          const now = state.sections[id];
+          caret.textContent = now ? "▾" : "▸";
+          head.setAttribute("aria-expanded", now ? "true" : "false");
+          body.style.display = now ? "" : "none";
+          if (now) load(body);
+        }
+      }, [caret, UI.el("span", { text: label.toUpperCase() })]);
+      if (open) load(body);
+      return UI.el("div", { class: "vsc-section" }, [head, body]);
+    }
+
+    async function loadOutline(body) {
+      UI.clear(body);
+      if (!state.active || isUntitled(state.active)) {
+        body.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ide.outlineEmpty") }));
+        return;
+      }
+      try {
+        const result = await API.ide("symbols", { path: state.active });
+        const rows = result.symbols || [];
+        if (!rows.length) {
+          body.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ide.noSymbols") }));
+          return;
+        }
+        rows.forEach((sy) => {
+          const node = UI.el("div", { class: "vsc-tree-item vsc-symbol", title: T("ide.line") + " " + sy.line }, [
+            UI.el("span", { class: "vsc-symbol-kind", text: sy.kind === "heading" ? "#" : "◇" }),
+            UI.el("span", { class: "trunc", text: sy.name })
+          ]);
+          node.addEventListener("click", () => gotoLine(sy.line));
+          body.appendChild(node);
+        });
+      } catch (err) {
+        body.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ide.noSymbols") }));
+      }
+    }
+
+    async function loadTimeline(body) {
+      UI.clear(body);
+      if (!state.active || isUntitled(state.active)) {
+        body.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ide.timelineEmpty") }));
+        return;
+      }
+      try {
+        const result = await API.ide("history_list", { path: state.active });
+        const rows = result.history || [];
+        if (!rows.length) {
+          body.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ide.noHistory") }));
+          return;
+        }
+        rows.forEach((version) => {
+          const when = new Date(Number(version.id));
+          const node = UI.el("div", {
+            class: "vsc-tree-item vsc-timeline-item",
+            title: when.toLocaleString() + " · " + UI.bytes(version.size)
+          }, [
+            UI.el("span", { class: "vsc-symbol-kind", text: "◷" }),
+            UI.el("span", { class: "trunc", text: when.toLocaleString() }),
+            UI.el("span", { class: "vsc-timeline-size", text: UI.bytes(version.size) })
+          ]);
+          node.addEventListener("click", async () => {
+            try {
+              const saved = await API.ide("history_read", { path: state.active, id: version.id });
+              const current = (state.docs[state.active] || {}).content || "";
+              const diff = await API.ide("diff", { a: saved.content, b: current, la: "historial", lb: "actual" });
+              showDiff(diff.diff);
+            } catch (err) { UI.toast("err", T("ide.noHistory"), err.message); }
+          });
+          body.appendChild(node);
+        });
+      } catch (err) {
+        body.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ide.noHistory") }));
+      }
+    }
+
+    function gotoLine(line) {
+      const ta = document.querySelector(".code-ta");
+      if (!ta) return;
+      const lines = ta.value.split("\n");
+      let pos = 0;
+      for (let i = 0; i < Math.max(0, line - 1) && i < lines.length; i++) pos += lines[i].length + 1;
+      ta.focus();
+      ta.setSelectionRange(pos, pos + (lines[line - 1] || "").length);
+      const style = window.getComputedStyle(ta);
+      const lh = parseFloat(style.lineHeight) || 20;
+      ta.scrollTop = Math.max(0, (line - 4) * lh);
+      updateStatus();
+      say(T("ide.line") + " " + line);
     }
 
     function renderSearch() {
@@ -565,11 +882,17 @@
     /* ---------------------------------------------------------- menú contextual explorer */
     function ctxMenu(x, y, items) {
       document.querySelectorAll(".vsc-ctx").forEach((n) => n.remove());
-      const m = UI.el("div", { class: "vsc-ctx" });
+      const m = UI.el("div", { class: "vsc-ctx", role: "menu" });
       m.style.left = x + "px"; m.style.top = y + "px";
       items.forEach((it) => {
         if (it === "-") { m.appendChild(UI.el("div", { class: "vsc-sep" })); return; }
-        const b = UI.el("button", { class: "vsc-dropdown-item", text: it.label });
+        const b = UI.el("button", {
+          class: "vsc-dropdown-item" + (it.checked ? " checked" : ""),
+          role: "menuitem", "aria-checked": it.checked ? "true" : "false"
+        }, [
+          UI.el("span", { class: "vsc-check", text: it.checked ? "✓" : "" }),
+          UI.el("span", { text: it.label })
+        ]);
         b.addEventListener("click", () => { m.remove(); it.action(); });
         m.appendChild(b);
       });
@@ -578,8 +901,8 @@
     }
     function explorerOps(path, isDir) {
       return [
-        { label: T("ide.newFile"), action: async () => { const n = prompt(T("ide.newFile"), (path ? path + "/" : "") + "archivo.txt"); if (n) { await API.ide("fs_create", { path: n }); loadTree(); } } },
-        { label: T("ide.newFolder"), action: async () => { const n = prompt(T("ide.newFolder"), (path ? path + "/" : "") + "carpeta"); if (n) { await API.ide("fs_mkdir", { path: n }); loadTree(); } } },
+        { label: T("ide.newFile"), action: () => inlineCreate("file", isDir ? path : path.split("/").slice(0, -1).join("/")) },
+        { label: T("ide.newFolder"), action: () => inlineCreate("dir", isDir ? path : path.split("/").slice(0, -1).join("/")) },
         "-",
         { label: T("ide.rename"), action: async () => { const n = prompt(T("ide.rename"), path); if (n && n !== path) { await API.ide("fs_rename", { path, new: n }); loadTree(); } } },
         { label: T("ide.copy"), action: async () => { const n = prompt(T("ide.copy") + " →", path + "-copia"); if (n) { await API.ide("fs_copy", { src: path, dst: n }); loadTree(); } } },
@@ -591,6 +914,11 @@
 
     /* ---------------------------------------------------------- outline / historial */
     async function renderOutline(container) {
+      /* Refresca las secciones abiertas del Explorer con el archivo activo. */
+      const outlineBody = document.getElementById("vsc-sec-outline");
+      if (outlineBody && state.sections.outline) loadOutline(outlineBody);
+      const timelineBody = document.getElementById("vsc-sec-timeline");
+      if (timelineBody && state.sections.timeline) loadTimeline(timelineBody);
       if (!state.active) return;
       try {
         const s = await API.ide("symbols", { path: state.active });
@@ -642,7 +970,11 @@
             UI.el("span", { class: "trunc", text: entry.path.split("/").pop() })
           ]);
           node.style.paddingLeft = (6 + depth * 12) + "px";
-          node.addEventListener("click", () => { open ? state.openDirs.delete(entry.path) : state.openDirs.add(entry.path); renderTree(); });
+          node.addEventListener("click", () => {
+            state.selected = { path: full, isDir: true };
+            open ? state.openDirs.delete(entry.path) : state.openDirs.add(entry.path);
+            renderTree();
+          });
           node.addEventListener("contextmenu", (e) => { e.preventDefault(); ctxMenu(e.clientX, e.clientY, explorerOps(full, true)); });
           fileList.appendChild(node);
           return;
@@ -658,7 +990,7 @@
         ]);
         node.style.paddingLeft = (6 + depth * 12) + "px";
         node.title = full;
-        node.addEventListener("click", () => openFile(full));
+        node.addEventListener("click", () => { state.selected = { path: full, isDir: false }; openFile(full); });
         node.addEventListener("contextmenu", (e) => { e.preventDefault(); ctxMenu(e.clientX, e.clientY, explorerOps(full, false)); });
         fileList.appendChild(node);
       });
@@ -816,7 +1148,17 @@
         codeHL.style.transform = "translate(" + (-codeTA.scrollLeft) + "px," + (-codeTA.scrollTop) + "px)";
         gutterInner.style.transform = "translateY(" + (-codeTA.scrollTop) + "px)";
       }
-      codeTA.addEventListener("input", () => { if (!state.active) return; state.dirty[state.active] = true; paint(); updateStatus(); renderTabs(); });
+      codeTA.addEventListener("input", () => {
+        if (!state.active) return;
+        state.dirty[state.active] = true;
+        paint(); updateStatus(); renderTabs();
+        if (window.ExtHost) {
+          clearTimeout(state.extChangeTimer);
+          state.extChangeTimer = setTimeout(() => ExtHost.emit("changeText", {
+            path: state.active, length: codeTA.value.length
+          }), 350);
+        }
+      });
       codeTA.addEventListener("scroll", sync);
       codeTA.addEventListener("keydown", (e) => {
         if (e.key === "Tab") { e.preventDefault(); const s = codeTA.selectionStart; codeTA.setRangeText("  ", s, codeTA.selectionEnd, "end"); codeTA.dispatchEvent(new Event("input")); }
@@ -840,6 +1182,13 @@
           label: T("ide.editor") + ": " + docName(state.active) + " · " + langLabel(lang),
           lang: lang,
           onPosition: () => updateStatus()
+        });
+      }
+      /* Autocompletado con Tab (activado por defecto). */
+      if (window.Completion) {
+        Completion.attach(codeTA, {
+          language: lang,
+          onAccept: () => { state.dirty[state.active] = true; updateStatus(); renderTabs(); }
         });
       }
       paint(); sync();
@@ -1059,9 +1408,37 @@
         statusbar.appendChild(UI.el("span", { class: "vsc-sb-item", text: "Ln " + (doc.lines || 1) + ", Col 1" }));
         statusbar.appendChild(UI.el("span", { class: "vsc-sb-item", text: T("ide.spaces") + ": 2" }));
         statusbar.appendChild(UI.el("span", { class: "vsc-sb-item", text: "UTF-8" }));
-        statusbar.appendChild(UI.el("button", { class: "vsc-sb-item vsc-sb-lang", title: T("ide.selectLanguage"), text: "{} " + langLabel(langFor(state.active)), onclick: selectLanguage }));
+        statusbar.appendChild(UI.el("button", {
+          class: "vsc-sb-item vsc-sb-lang",
+          title: T("ide.selectLanguage") + " · " + LANGS.length + " " + T("ide.languageCount"),
+          "aria-label": T("ide.selectLanguage") + ": " + langLabel(langFor(state.active)),
+          text: "{} " + langLabel(langFor(state.active)), onclick: selectLanguage
+        }));
       }
       statusbar.appendChild(UI.el("span", { class: "vsc-sb-item", text: state.dirty[state.active] ? "●" : "" }));
+      /* Autocompletado con Tab: visible y conmutable, como el modo Tab de VS Code. */
+      const tabOn = !window.Completion || Completion.enabled();
+      statusbar.appendChild(UI.el("button", {
+        class: "vsc-sb-item vsc-sb-tab" + (tabOn ? " on" : ""),
+        text: "Tab " + (tabOn ? "✓" : "✕"),
+        title: T("cmp.toggleHint"), "aria-label": T("cmp.toggleHint"),
+        "aria-pressed": tabOn ? "true" : "false",
+        onclick: () => {
+          if (!window.Completion) return;
+          Completion.setEnabled(!Completion.enabled());
+          updateStatus();
+          UI.toast("ok", Completion.enabled() ? T("cmp.on") : T("cmp.off"));
+        }
+      }));
+      if (window.ExtHost) {
+        ExtHost.statusItems().forEach((item) => {
+          statusbar.appendChild(UI.el("button", {
+            class: "vsc-sb-item vsc-sb-ext", text: item.text,
+            title: item.tooltip || item.text, "aria-label": item.tooltip || item.text,
+            onclick: () => { setActivity("extensions"); }
+          }));
+        });
+      }
       if (window.A11y) statusbar.appendChild(A11y.statusItem());
       statusbar.setAttribute("role", "status");
       statusbar.setAttribute("aria-label", T("ide.statusBar"));
@@ -1103,6 +1480,7 @@
         state.docs[path] = doc;
         if (state.active === path) { renderEditor(); updateStatus(); }
         renderTree();
+        if (window.ExtHost) ExtHost.emit("activeEditor", { path: path, language: langFor(path), name: docName(path) });
       } catch (err) {
         UI.toast("err", T("ide.cantOpen"), err.message);
         state.tabs = state.tabs.filter((p) => p !== path); state.active = state.tabs[0] || null;
@@ -1120,6 +1498,7 @@
         updateStatus(); renderTabs(); renderTree();
         UI.toast("ok", T("ide.saved"), state.active);
         sig("save", state.active);
+        if (window.ExtHost) ExtHost.emit("saved", { path: state.active });
       } catch (err) { UI.toast("err", T("ide.notSaved"), err.message); sig("taskFailed", err.message); }
     }
     async function saveAll() { for (const p of Object.keys(state.dirty)) { state.active = p; renderEditor(); await save(); } }
@@ -1335,13 +1714,52 @@
       const ref = UI.modal({ title: T("ide.goToFile"), body: UI.el("div", { class: "stack" }, [input, list]) });
       draw(""); setTimeout(() => input.focus(), 50);
     }
+    /* Vuelve a mostrar la página de bienvenida sin cerrar las pestañas. */
+    function showWelcome() {
+      state.welcome = true;
+      state.active = null;
+      localStorage.setItem("ely.ideWelcome", "1");
+      renderAll();
+      say(T("ide.welcomeTab"));
+    }
+
+    function showAbout() {
+      const summary = window.Engine ? Engine.summary() : {};
+      UI.modal({
+        title: T("ide.about"),
+        subtitle: "Ely IDE",
+        body: UI.el("dl", { class: "kv" }, [
+          UI.el("dt", { text: T("ide.aboutVersion") }),
+          UI.el("dd", { text: (window.App && App.version) || "0.9.0" }),
+          UI.el("dt", { text: T("ide.aboutLanguages") }),
+          UI.el("dd", { text: String(LANGS.length) }),
+          UI.el("dt", { text: T("ide.aboutExtensions") }),
+          UI.el("dd", { text: String((window.ExtHost && ExtHost.state.extensions || []).length) }),
+          UI.el("dt", { text: T("set.profile") }),
+          UI.el("dd", { text: summary.profile ? summary.profile.label : "—" }),
+          UI.el("dt", { text: T("set.model") }),
+          UI.el("dd", { class: "mono", text: summary.model || "—" })
+        ])
+      });
+    }
+
     function commandPalette() {
       const cmds = [
         [T("ide.openFolder"), openFolderFromComputer], [T("ide.openFile"), openFromComputer],
         [T("ide.newProject"), createProjectModal], [T("ide.terminal"), () => openPanel("terminal")],
         [T("ide.search"), () => setActivity("search")], [T("ide.wordWrap"), toggleWrap],
-        [T("ide.save"), save], [T("ide.goToFile"), quickOpen], [T("ide.selectLanguage"), selectLanguage]
+        [T("ide.save"), save], [T("ide.goToFile"), quickOpen], [T("ide.selectLanguage"), selectLanguage],
+        [T("cmp.toggleHint"), () => { if (window.Completion) { Completion.setEnabled(!Completion.enabled()); updateStatus(); UI.toast("ok", Completion.enabled() ? T("cmp.on") : T("cmp.off")); } }],
+        [T("ext.openManager"), () => App.navigate("extensions")],
+        [T("ide.welcomeTab"), showWelcome],
+        [T("ide.about"), showAbout]
       ];
+      /* Comandos aportados por extensiones (permiso "commands"). */
+      if (window.ExtHost) {
+        ExtHost.commandList().forEach((cmd) => {
+          cmds.push([cmd.title + "  ·  " + cmd.source, () => ExtHost.execute(cmd.id)]);
+        });
+      }
       const list = UI.el("div", { class: "vsc-tree" });
       cmds.forEach(([label, fn]) => { const n = UI.el("div", { class: "vsc-tree-item", text: label }); n.addEventListener("click", () => { ref.close(); fn(); }); list.appendChild(n); });
       const ref = UI.modal({ title: T("ide.commandPalette"), body: list });
@@ -1423,6 +1841,37 @@
     }
 
     function renderAll() { renderTabs(); renderBreadcrumb(); renderEditor(); updateStatus(); renderSidebar(); renderPanel(); }
+
+    /* --------------------------------------------- extensiones: adaptador */
+    if (window.ExtHost) {
+      ExtHost.setEditor({
+        getActiveFile: () => state.active ? {
+          path: state.active, name: docName(state.active),
+          language: langFor(state.active), untitled: isUntitled(state.active),
+          dirty: !!state.dirty[state.active]
+        } : null,
+        getText: () => codeTA ? codeTA.value : ((state.docs[state.active] || {}).content || ""),
+        getSelection: () => codeTA ? {
+          start: codeTA.selectionStart, end: codeTA.selectionEnd,
+          text: codeTA.value.slice(codeTA.selectionStart, codeTA.selectionEnd)
+        } : null,
+        insertText: (text) => {
+          if (!codeTA) return;
+          const pos = codeTA.selectionStart;
+          codeTA.setRangeText(text, pos, codeTA.selectionEnd, "end");
+          codeTA.dispatchEvent(new Event("input", { bubbles: true }));
+        },
+        replaceSelection: (text) => {
+          if (!codeTA) return;
+          codeTA.setRangeText(text, codeTA.selectionStart, codeTA.selectionEnd, "end");
+          codeTA.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      });
+      const offExt = ExtHost.subscribe((s, reason) => {
+        if (!document.body.contains(root)) { offExt(); return; }
+        if (reason === "status" || reason === "activated") updateStatus();
+      });
+    }
 
     /* ---------------------------------------------------------- accesibilidad */
     if (window.A11y) {

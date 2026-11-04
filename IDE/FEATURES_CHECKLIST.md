@@ -136,14 +136,14 @@
 - 🔌 **132.** Ir a símbolo del archivo
 - 🔌 **133.** Ir a símbolo del espacio de trabajo
 - ✅+🔌 **134.** Mostrar esquema del documento
-- ✅ **135.** Mostrar vista de esquema en explorador
+- ✅+🔌 **135.** Mostrar vista de esquema en explorador
 - ✅ **136.** Navegar hacia atrás
 - ✅ **137.** Navegar hacia adelante
 - ⛔ **138.** Ir a pareja de delimitadores
 - ✅ **139.** Ir a archivo reciente
 - ✅ **140.** Abrir archivo por búsqueda rápida
-- ⛔ **141.** Mostrar sugerencias de autocompletado
-- ⛔ **142.** Aceptar sugerencia completa
+- ✅ **141.** Mostrar sugerencias de autocompletado
+- ✅ **142.** Aceptar sugerencia completa
 - ⛔ **143.** Aceptar siguiente palabra de sugerencia
 - ⛔ **144.** Mostrar documentación emergente
 - ⛔ **145.** Mostrar tipos de variables
@@ -161,7 +161,7 @@
 - ⛔ **157.** Organizar importaciones
 - ⛔ **158.** Eliminar importaciones no utilizadas
 - ⛔ **159.** Integración con Language Server Protocol
-- ⛔ **160.** Configurar proveedor de lenguaje por extensión
+- ✅+🔌 **160.** Configurar proveedor de lenguaje por extensión
 - ⛔ **161.** Formatear documento completo
 - ⛔ **162.** Formatear selección
 - ⛔ **163.** Formatear al guardar
@@ -290,11 +290,11 @@
 - ⛔ **286.** Configurar ajustes por lenguaje
 - ⛔ **287.** Administrar atajos de teclado
 - ⛔ **288.** Abrir archivo de atajos JSON
-- ⛔ **289.** Instalar extensiones
-- ⛔ **290.** Desinstalar extensiones
-- ⛔ **291.** Habilitar y deshabilitar extensiones
+- ✅+🔌 **289.** Instalar extensiones
+- ✅+🔌 **290.** Desinstalar extensiones
+- ✅+🔌 **291.** Habilitar y deshabilitar extensiones
 - ⛔ **292.** Actualizar extensiones
-- ⛔ **293.** Consultar detalles y versiones de extensiones
+- ✅+🔌 **293.** Consultar detalles y versiones de extensiones
 - ⛔ **294.** Administrar perfiles del editor
 - ⛔ **295.** Importar y exportar perfiles
 - ⛔ **296.** Sincronizar ajustes y extensiones
@@ -427,7 +427,7 @@
 - ⛔ **423.** Mostrar foco visible en todos los controles
 - ⛔ **424.** Anunciar cambios de estado a lectores de pantalla
 - ⛔ **425.** Anunciar errores del editor
-- ⛔ **426.** Configurar anuncios de autocompletado
+- ✅ **426.** Configurar anuncios de autocompletado
 - ⛔ **427.** Configurar sonidos de señales
 - 🟡 **428.** Desactivar efectos de movimiento
 - ⛔ **429.** Aumentar áreas interactivas
@@ -462,16 +462,16 @@
 - ⛔ **458.** Marcar espacio como solo lectura
 - ⛔ **459.** Abrir espacio de trabajo en ventana nueva
 - ⛔ **460.** Cerrar espacio de trabajo sin cerrar la ventana
-- ⛔ **461.** Mostrar vista de extensiones instaladas
+- ✅+🔌 **461.** Mostrar vista de extensiones instaladas
 - ⛔ **462.** Buscar extensiones en un catálogo
-- ⛔ **463.** Instalar extensión desde archivo VSIX
-- ⛔ **464.** Instalar extensión desde identificador
+- ⛔ **463.** Instalar extensión desde archivo VSIX (no compatible: otra API y host Node/Electron; se usa el formato Ely)
+- ✅+🔌 **464.** Instalar extensión desde identificador
 - ⛔ **465.** Actualizar una extensión individual
 - ⛔ **466.** Actualizar todas las extensiones
 - ⛔ **467.** Ver dependencias de una extensión
-- ⛔ **468.** Ver contribuciones de una extensión
+- ✅ **468.** Ver contribuciones de una extensión
 - ⛔ **469.** Configurar ajustes aportados por extensiones
-- ⛔ **470.** Ejecutar comandos aportados por extensiones
+- ✅+🔌 **470.** Ejecutar comandos aportados por extensiones
 - ⛔ **471.** Mostrar teclas asignadas por extensiones
 - ⛔ **472.** Desactivar extensión solo en el espacio actual
 - ⛔ **473.** Iniciar ventana de desarrollo de extensiones
@@ -520,3 +520,34 @@ symbols · tasks_list/run · file_meta · stats · workspace_save/list.
 
 Las ⛔ que dependen de LSP (autocompletado, ir a definición, refactor semántico), debugger real o
 marketplace de extensiones no se simulan en web; quedan pendientes de un backend de lenguaje/depuración.
+
+---
+
+## Añadidos verificados (fase 3 · extensiones y autocompletado)
+
+- ✅+🔌 **473.** Sistema de extensiones propio con manifiesto `ely-extension.json`
+- ✅+🔌 **474.** Permisos declarados por extensión (editor, workspace, ui, commands, completions, chat, network)
+- ✅ **475.** Aislamiento en `iframe sandbox="allow-scripts"` sin acceso al DOM ni a la red
+- ✅+🔌 **476.** Comunicación externa real mediante proxy del backend con `network:<host>`
+- ✅+🔌 **477.** Instalar desde GitHub (`owner/repo`), npm, URL o carpeta del ordenador
+- ✅ **478.** Autocompletado en línea con texto fantasma, activado por defecto
+- ✅ **479.** Aceptar sugerencia con Tab; Esc descarta; Alt+]/[ cicla; Ctrl+Espacio fuerza
+- ✅ **480.** Proveedores de autocompletado aportados por extensiones
+- ✅ **481.** Snippets y palabras clave por lenguaje + palabras del propio archivo
+- ✅ **482.** Convivencia con Tab de indentación y con el modo Tab mueve el foco (Ctrl+M)
+- ✅ **483.** Comandos de extensión en la paleta y elementos en la barra de estado
+- ✅ **484.** Extensiones en el idioma de la interfaz (`ely.l10n` + `l10n` del manifiesto)
+
+## Añadidos verificados (fase 4 · lenguajes y Explorador)
+
+- ✅ **485.** Catálogo de **165 lenguajes** (`js/languages.js`) con detección por extensión y nombre
+- ✅ **486.** Resaltado por familias (79) para todos los modos del catálogo
+- ✅ **487.** Cabecera del Explorador con menú «⋯» (ordenar, ocultos, refrescar, contraer)
+- ✅ **488.** Fila de carpeta raíz plegable con el nombre del proyecto
+- ✅+🔌 **489.** Acciones del Explorador: Nuevo archivo, Nueva carpeta, Refrescar, Contraer carpetas
+- ✅+🔌 **490.** Creación en línea dentro del árbol (Enter crea, Esc cancela)
+- ✅+🔌 **491.** Sección Outline plegable con símbolos reales y salto a la línea
+- ✅+🔌 **492.** Sección Timeline plegable con historial local y diff
+- ✅+🔌 **493.** Outline para más de 35 lenguajes (antes 6)
+- ✅ **494.** Menú Ayuda con Bienvenida, Comandos, Atajos, Accesibilidad y Acerca de
+- ✅ **495.** El IDE conserva proyecto y pestañas al cambiar de idioma o de vista

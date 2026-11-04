@@ -427,6 +427,46 @@ class ElyHandler(BaseHTTPRequestHandler):
             except KeyError as exc:
                 raise ApiError(400, f"Falta argumento: {exc}") from exc
 
+        # ------------------------------------------------------ extensiones
+        if method == "GET" and route == "/extensions":
+            from . import extensions as ext
+            try:
+                return self.json(ext.call(engine.root, "list", {}))
+            except ext.ExtensionError as exc:
+                raise ApiError(exc.status, str(exc), exc.detail) from exc
+
+        if method == "POST" and route == "/extensions/call":
+            from . import extensions as ext
+            body = self.read_json()
+            try:
+                return self.json(ext.call(engine.root, str(body.get("op") or ""), body.get("args") or {}))
+            except ext.ExtensionError as exc:
+                raise ApiError(exc.status, str(exc), exc.detail) from exc
+            except workspace.WorkspaceError as exc:
+                raise ApiError(exc.status, str(exc)) from exc
+
+        if method == "GET" and route == "/extensions/runner":
+            from . import extensions as ext
+            q = self.query()
+            try:
+                token = str(q.get("token") or "")
+                if token and not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", token):
+                    token = ""
+                html = ext.runner_html(engine.root, str(q.get("id") or ""), token)
+            except ext.ExtensionError as exc:
+                raise ApiError(exc.status, str(exc), exc.detail) from exc
+            return self._send(200, html.encode("utf-8"), "text/html; charset=utf-8",
+                              {"Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'"})
+
+        if method == "GET" and route == "/extensions/asset":
+            from . import extensions as ext
+            q = self.query()
+            try:
+                target, ctype = ext.asset(engine.root, str(q.get("id") or ""), str(q.get("path") or ""))
+            except ext.ExtensionError as exc:
+                raise ApiError(exc.status, str(exc), exc.detail) from exc
+            return self._send(200, target.read_bytes(), ctype)
+
         if method == "GET" and route == "/workspace/raw":
             q = self.query()
             try:

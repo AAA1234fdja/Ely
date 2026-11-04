@@ -1209,3 +1209,44 @@ label.field .hint { color: var(--muted); font-size: 10px; font-weight: 400; }
   font-style: italic; cursor: pointer; padding: 0; pointer-events: auto;
 }
 .code-hint-link:hover { text-decoration: underline; }
+
+/* ---- Explorer estilo VS Code: cabecera, carpeta raíz y acciones ---- */
+.vsc-side-head { display: flex; align-items: center; gap: 4px; padding-right: 6px; flex: none; }
+.vsc-side-head .vsc-side-title { flex: 1; min-width: 0; }
+.vsc-icon-btn {
+  width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 0; border-radius: 3px; color: var(--vsc-text);
+  font-size: 13px; line-height: 1; cursor: pointer; padding: 0; flex: none;
+}
+.vsc-icon-btn:hover { background: var(--vsc-hover, #2a2d2e); }
+.vsc-icon-btn:focus-visible { outline: 1px solid var(--vsc-accent); outline-offset: -1px; }
+.vsc-root-row {
+  display: flex; align-items: center; gap: 2px; padding: 2px 6px 2px 4px; flex: none;
+  border-top: 1px solid var(--vsc-border);
+}
+.vsc-root-toggle {
+  display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0;
+  background: transparent; border: 0; color: var(--vsc-text); cursor: pointer;
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; padding: 3px 0; text-align: left;
+}
+.vsc-root-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vsc-root-actions { display: flex; gap: 1px; flex: none; }
+.vsc-inline-row { display: flex; align-items: center; gap: 4px; padding: 2px 6px 2px 8px; }
+.vsc-inline-icon { font-size: 12px; opacity: .8; }
+.vsc-inline-input {
+  flex: 1; min-width: 0; background: #3c3c3c; border: 1px solid var(--vsc-accent);
+  color: var(--vsc-text); font-size: 12px; padding: 2px 5px; outline: none; border-radius: 2px;
+}
+.vsc-sections { border-top: 1px solid var(--vsc-border); flex: none; }
+.vsc-section-head {
+  display: flex; align-items: center; gap: 4px; width: 100%;
+  background: transparent; border: 0; color: var(--vsc-muted); cursor: pointer;
+  font-size: 11px; font-weight: 700; letter-spacing: .05em; padding: 5px 8px; text-align: left;
+}
+.vsc-section-head:hover { background: var(--vsc-hover, #2a2d2e); color: var(--vsc-text); }
+.vsc-section-body { max-height: 190px; overflow-y: auto; padding-bottom: 4px; }
+.vsc-symbol-kind { width: 14px; flex: none; color: var(--vsc-muted); font-size: 10px; text-align: center; }
+.vsc-timeline-size { margin-left: auto; font-size: 10px; color: var(--vsc-muted); flex: none; }
+.vsc-timeline-item .trunc { font-size: 11.5px; }
+.vsc-ctx .vsc-dropdown-item { display: flex; align-items: center; justify-content: flex-start; gap: 6px; }
+.vsc-ctx .vsc-dropdown-item .vsc-check { width: 12px; flex: none; font-size: 11px; }

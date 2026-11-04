@@ -1,0 +1,85 @@
+/* Ely Cowork · extensiones y autocompletado con Tab.
+ * El iframe de cada extensión no se ve: solo ejecuta código aislado. */
+
+.ext-frame {
+  position: absolute; left: -9999px; top: 0;
+  width: 1px; height: 1px; border: 0; opacity: 0; pointer-events: none;
+}
+
+/* ------------------------------------------------ texto fantasma (ghost text) */
+.code-ghost {
+  position: absolute; left: -9999px; top: 0;
+  color: #6f6f6f; font: inherit; white-space: pre;
+  pointer-events: none; z-index: 3; user-select: none;
+}
+.code-ghost-badge {
+  position: absolute; left: -9999px; top: 0;
+  background: #252526; border: 1px solid #454545; color: #cccccc;
+  font-size: 10.5px; line-height: 1.4; padding: 1px 6px; border-radius: 3px;
+  white-space: nowrap; pointer-events: none; z-index: 4; user-select: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .45);
+}
+.vsc-sb-tab.on { color: #ffffff; }
+.vsc-sb-tab:not(.on) { opacity: .65; }
+.vsc-sb-ext { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ------------------------------------------------- panel lateral del IDE */
+.vsc-ext { display: flex; flex-direction: column; gap: 6px; padding: 0 8px 12px; overflow-y: auto; }
+.vsc-ext-list { display: flex; flex-direction: column; gap: 4px; }
+.vsc-ext-item {
+  display: flex; align-items: center; gap: 6px; padding: 5px 6px;
+  border: 1px solid transparent; border-radius: 3px;
+}
+.vsc-ext-item:hover { background: var(--vsc-hover, #2a2d2e); }
+.vsc-ext-name { font-size: 12px; color: var(--vsc-text); }
+.vsc-ext-meta { font-size: 10.5px; color: var(--vsc-muted); }
+.vsc-ext-err { font-size: 10.5px; color: #f48771; margin-top: 2px; }
+.vsc-ext-note { font-size: 10.5px; line-height: 1.45; padding: 6px 2px; }
+.vsc-side-btn.ghost { background: transparent; border: 1px solid var(--vsc-border, #3c3c3c); }
+
+/* ------------------------------------------------------- vista Extensiones */
+.ext-view .card h3 { margin: 0; font-size: 13.5px; }
+.ext-card {
+  border: 1px solid var(--border); border-radius: 6px; padding: 12px;
+  display: flex; flex-direction: column; gap: 8px; background: var(--panel, transparent);
+}
+.ext-card.on { border-color: var(--accent, #0e639c); }
+.ext-head { align-items: flex-start; gap: 10px; }
+.ext-icon { font-size: 18px; line-height: 1; opacity: .8; }
+.ext-name { font-size: 13.5px; font-weight: 600; }
+.ext-meta { font-size: 11px; }
+.ext-desc { margin: 0; font-size: 12px; line-height: 1.5; }
+.ext-perms { display: flex; flex-wrap: wrap; gap: 4px; }
+.ext-perm {
+  font-family: var(--mono, monospace); font-size: 10.5px; padding: 1px 6px;
+  border: 1px solid var(--border); border-radius: 10px; color: var(--muted);
+}
+.ext-perm.net { border-color: #c19c00; color: #e2c08d; }
+.ext-perm.none { opacity: .6; }
+.ext-state {
+  font-size: 10.5px; padding: 2px 8px; border-radius: 10px;
+  border: 1px solid var(--border); color: var(--muted); white-space: nowrap;
+}
+.ext-state.on { border-color: #2ea043; color: #4ec9b0; }
+.ext-state.err { border-color: #f48771; color: #f48771; }
+.ext-actions { flex-wrap: wrap; gap: 6px; }
+.ext-error { font-size: 11.5px; color: #f48771; }
+.ext-log { font-size: 11px; font-family: var(--mono, monospace); }
+.ext-hosts { display: flex; flex-wrap: wrap; gap: 4px; }
+.ext-host {
+  font-family: var(--mono, monospace); font-size: 10.5px; padding: 2px 7px;
+  border: 1px solid var(--border); border-radius: 3px; color: var(--muted);
+}
+.ext-vsix { font-size: 11.5px; line-height: 1.5; border-left: 2px solid #c19c00; padding-left: 8px; }
+.ext-doc {
+  margin: 0; padding: 12px; background: #1e1e1e; color: #d4d4d4;
+  border: 1px solid #3c3c3c; border-radius: 4px; font-size: 12px;
+  line-height: 1.55; overflow: auto; max-height: 60vh; white-space: pre;
+}
+.ext-pick { max-height: 50vh; overflow-y: auto; }
+.ext-pick-item {
+  display: flex; justify-content: space-between; gap: 12px; width: 100%;
+  text-align: left; padding: 7px 10px; background: transparent;
+  border: 1px solid transparent; border-radius: 3px; color: inherit; cursor: pointer;
+}
+.ext-pick-item:hover, .ext-pick-item:focus { background: var(--hover, #2a2d2e); border-color: var(--border); }

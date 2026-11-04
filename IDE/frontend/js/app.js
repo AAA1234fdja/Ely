@@ -55,7 +55,8 @@
     costs: ["Cost Tracker", "Gasto y eficiencia"],
     memory: ["Memory", "Memoria y grafo de contexto"],
     chat: ["Chat", "Conversación con el perfil activo"],
-    ide: ["IDE", "Editor de código con IA"]
+    ide: ["IDE", "Editor de código con IA"],
+    extensions: ["Extensiones", "Instala y activa extensiones con permisos"]
   };
 
   /* Vistas que ocupan la altura completa y no llevan contenedor con relleno. */
@@ -308,6 +309,7 @@
       /* Módulos que el HTML base no declara: se cargan bajo demanda, sin
          modificar el documento original. */
       const LAZY = {
+        extensions: "js/views/extensions.js",
         skillslib: "js/views/skillslib.js",
         repos: "js/views/repos.js",
         storage: "js/views/storage.js"
@@ -392,6 +394,10 @@
       }
       await loadScript("js/a11y.js");
       if (window.A11y) A11y.init(this);
+      /* Autocompletado con Tab (activado por defecto) y host de extensiones. */
+      await loadScript("js/completion.js");
+      await loadScript("js/ext-host.js");
+      if (window.ExtHost) ExtHost.init();
 
       const side = document.querySelector("aside");
       if (side) {

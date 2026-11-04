@@ -166,6 +166,12 @@
     uploadWorkspace: (path, content_b64) => request("/workspace/upload", { method: "POST", body: { path, content_b64 } }),
     terminal: (command, cwd) => request("/terminal/exec", { method: "POST", body: { command, cwd } }),
     ide: (op, args) => request("/ide/call", { method: "POST", body: { op, args: args || {} } }),
+    ideCall: (op, args) => request("/ide/call", { method: "POST", body: { op, args: args || {} } }),
+    /* Extensiones: instalación, permisos y proxy de red con permisos. */
+    extensions: () => request("/extensions"),
+    extCall: (op, args) => request("/extensions/call", { method: "POST", body: { op, args: args || {} } }),
+    extRunnerUrl: (id, token) => "/api/extensions/runner?id=" + encodeURIComponent(id) + (token ? "&token=" + encodeURIComponent(token) : ""),
+    extAssetUrl: (id, path) => "/api/extensions/asset?id=" + encodeURIComponent(id) + "&path=" + encodeURIComponent(path),
     addPlanned: (data) => request("/storage/planned", { method: "POST", body: data }),
     deletePlanned: (id, profile) => request("/storage/planned/" + encodeURIComponent(id) + (profile ? "?profile=" + encodeURIComponent(profile) : ""), { method: "DELETE" }),
     memory: () => request("/memory"),

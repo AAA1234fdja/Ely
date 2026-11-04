@@ -179,24 +179,72 @@ documentación y los atajos sean familiares.
 | 2a | Accesibilidad: `a11y.js` (950) + `a11y.css` (226) + cableado en ide/chat/ui/settings | **1.400** | ✅ |
 | 2b | Idioma: traductor derivado del diccionario, 175 frases nuevas, patrones dinámicos, atributos ARIA | **474** | ✅ |
 | 2c | IDE: bienvenida VS Code (Start/Recent/Walkthroughs), quick pick «New File», Untitled-N, selector de lenguaje, pista del editor | **720** | ✅ |
-| — | **Consumido** | **≈ 3.917 / 10.000** | margen ≈ 6.000 |
-| 3 | Editor: plegado de código, bracket matching, word highlight, sticky scroll, minimapa, buscar avanzado | ~1.200 | propuesto |
-| 4 | Workbench: editor de atajos, modo Zen, snippets, Emmet, preview Markdown, multi-diff | ~1.300 | propuesto |
-| 5 | Temas/gramáticas TextMate desde `extensions/` | ~600 | propuesto |
+| 3 | **Extensiones + comunicación externa**: backend (`extensions.py` 770), host en sandbox (`ext-host.js` 470), autocompletado con Tab (`completion.js` 574), vista Extensiones (227), 3 extensiones incluidas, CLI `ely extensions` | **≈ 2.900** | ✅ |
+| 4 | **Lenguajes + Explorador VS Code**: catálogo de 165 lenguajes (267), resaltado por familias (209), Explorer con carpeta raíz y 4 acciones, creación en línea, Outline y Timeline | **≈ 730** | ✅ |
+| — | **Consumido** | **≈ 7.550 / 10.000** | margen ≈ 2.450 |
+| 5 | Editor: plegado de código, bracket matching, sticky scroll, minimapa | ~1.000 | propuesto |
+| 6 | Workbench: editor de atajos, modo Zen, Emmet, preview Markdown, multi-diff | ~900 | propuesto |
 
-### Verificación de la fase 2 (no solo «está escrito»)
+### Verificación de las fases 2, 3 y 4 (no solo «está escrito»)
 
 | Prueba | Resultado |
 |---|---|
-| `python3 -m unittest discover -s CLI/tests` | **93/93 OK** |
-| Harness jsdom del chat contra el backend real | **36/36 OK** (una sola conversación, persistencia, borrado, proyectos) |
-| Harness jsdom del IDE + accesibilidad | **63/63 OK** (bienvenida, New File, Untitled, lenguaje, roles ARIA, teclado, Alt+F2/F1, Ctrl+M, contraste) |
-| Auditoría de idioma recorriendo **19 rutas** con `language=en` | **0 textos en español sin traducir** (antes: 117) |
+| `python3 -m unittest discover -s CLI/tests` | **161/161 OK** (93 previos + 68 de extensiones) |
+| Harness jsdom del chat contra el backend real | **36/36 OK** |
+| Harness jsdom del IDE + accesibilidad | **65/65 OK** |
+| Harness jsdom de **extensiones + Tab** | **100/100 OK** |
+| Harness jsdom de **Explorador + lenguajes** | **64/64 OK** |
+| Auditoría de idioma recorriendo **20 rutas** con `language=en` | **0 textos en español sin traducir** (antes: 117) |
+| Ida y vuelta de idioma ES→EN→ES | **40/40 OK** |
+| Comunicación externa real | `GET https://api.github.com/repos/microsoft/vscode` → **HTTP 200** a través del proxy con permiso |
+| Sin permiso / host no declarado | **403** en ambos casos (backend y host) |
+
+### Fase 3 · Extensiones y autocompletado con Tab
+
+**Sistema de extensiones propio** (no es el marketplace de VS Code, y la UI lo dice):
+
+- Manifiesto `ely-extension.json` + `main.js` con `activate(ely)`.
+- Permisos declarados: `editor`, `workspace:read/write`, `ui`, `commands`,
+  `completions`, `chat`, `network:<host>`. Sin permiso, la llamada falla.
+- Cada extensión corre en `<iframe sandbox="allow-scripts">` **sin
+  `allow-same-origin`**: origen opaco, sin DOM de la app, sin cookies ni
+  `localStorage` y sin red propia. El host valida el emisor por `event.source`
+  y por un secreto por iframe.
+- **Comunicación externa**: `ely.fetch()` → `POST /api/extensions/call {op:"fetch"}`
+  → el backend comprueba `network:<host>` y hace la petición real.
+- Instalación desde GitHub (`owner/repo`), `npm:paquete`, URL https o carpeta del
+  ordenador (selector `webkitdirectory`), con límites de 8 MB y 400 archivos y
+  sin rutas que escapen de la carpeta.
+- CLI: `ely extensions list|install|uninstall|enable|disable|info|fetch`.
+- Incluidas: `ely.word-count`, `ely.python-snippets`, `ely.github-info`.
+
+**Autocompletado con Tab, activado por defecto** (`Settings.tabCompletion = true`):
+texto fantasma tras el cursor, Tab acepta, Esc descarta, Alt+]/[ cambian de
+candidato y Ctrl+Espacio fuerza. Fuentes: extensiones → snippets del lenguaje →
+palabras clave → palabras del archivo. Respeta el modo *Tab mueve el foco*
+(Ctrl+M) de accesibilidad y no rompe el Tab de indentación.
+
+### Fase 4 · Lenguajes y Explorador como VS Code
+
+- **165 lenguajes** en `js/languages.js`, con detección por extensión y por
+  nombre de archivo (`Dockerfile`, `CMakeLists.txt`, `.env`, `tsconfig.json`…),
+  y resaltado por **79 familias** en `js/syntax.js`.
+- **Explorador** con cabecera y menú «⋯», fila de carpeta raíz plegable con el
+  nombre del proyecto y las cuatro acciones de VS Code: **Nuevo archivo, Nueva
+  carpeta, Refrescar y Contraer carpetas**. La creación es en línea dentro del
+  árbol (Enter crea, Esc cancela), no con `prompt()` del navegador.
+- Secciones plegables **Outline** (símbolos reales, salto a la línea) y
+  **Timeline** (historial local real con diff). El outline pasó de 6 a más de
+  35 lenguajes.
+- Menú **Ayuda** (Bienvenida, Comandos, Atajos, Accesibilidad, Acerca de) y el
+  estado del IDE (proyecto, pestañas, carpetas abiertas) sobrevive a los cambios
+  de idioma y de vista.
 
 La auditoría de idioma es un recorrido real: carga la app servida por `ely serve`
 en un DOM, cambia el idioma y visita las 18 rutas del nav más el chat, revisando
 nodos de texto y atributos `placeholder`, `title` y `aria-label`.
 
 Lo que **no** entra en el presupuesto y se declara «próximamente» con motivo en la UI:
-depurador con breakpoints (DAP), marketplace de extensiones, LSP/IntelliSense, notebooks con
-kernel, remoto/túneles y voz.
+depurador con breakpoints (DAP), **marketplace y `.vsix` de VS Code** (otra API y
+host Node/Electron), LSP/IntelliSense real, notebooks con kernel, remoto/túneles y voz.
+El sistema de extensiones de la fase 3 es propio y no finge compatibilidad con VSIX.

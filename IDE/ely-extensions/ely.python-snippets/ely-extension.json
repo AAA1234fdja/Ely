@@ -1,0 +1,27 @@
+{
+  "id": "ely.python-snippets",
+  "name": "Snippets de Python (Tab)",
+  "version": "1.0.0",
+  "publisher": "ely",
+  "description": "Proveedor de autocompletado: escribe def, class, for, ifmain… y acepta con Tab.",
+  "main": "main.js",
+  "permissions": [
+    "completions",
+    "editor"
+  ],
+  "activationEvents": [
+    "onStartup"
+  ],
+  "contributes": {
+    "completionLanguages": [
+      "python"
+    ],
+    "label": "Snippets Python"
+  },
+  "l10n": {
+    "en": {
+      "name": "Python snippets (Tab)",
+      "description": "Completion provider: type def, class, for, ifmain… and accept with Tab."
+    }
+  }
+}

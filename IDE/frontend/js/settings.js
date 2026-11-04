@@ -9,6 +9,7 @@
   const Settings = {
     defaults: {
       language: "es",           // es | en (idioma de la interfaz)
+      tabCompletion: true,      // completar código con Tab (ACTIVADO por defecto)
       nationality: "CO",        // nacionalidad → zona horaria de las horas
       workLocation: "local",    // lugar de trabajo principal (local = Local Storage)
       density: "comfortable",   // comfortable | compact
@@ -186,6 +187,22 @@
       ]);
 
       box.appendChild(row(t("set.density"), t("set.densityHint"), density));
+
+      /* --- autocompletado con Tab: activado por defecto --- */
+      const tabInput = UI.el("input", {
+        type: "checkbox",
+        checked: values.tabCompletion !== false,
+        onchange: (event) => {
+          if (window.Completion) Completion.setEnabled(event.target.checked);
+          else this.set({ tabCompletion: event.target.checked });
+          UI.toast("ok", event.target.checked ? t("cmp.on") : t("cmp.off"));
+        }
+      });
+      document.addEventListener("completion:change", (event) => {
+        tabInput.checked = !!(event.detail && event.detail.enabled);
+      });
+      box.appendChild(row(t("cmp.settingLabel"), t("cmp.settingHelp"),
+        UI.el("label", { class: "switch" }, [tabInput, UI.el("span")])));
       box.appendChild(row(t("set.stream"), t("set.streamHint"), toggle("stream")));
       box.appendChild(row(t("set.enterSends"), t("set.enterSendsHint"), toggle("sendOnEnter")));
       box.appendChild(row(t("set.showUsage"), t("set.showUsageHint"), toggle("showUsage")));

@@ -1,0 +1,30 @@
+{
+  "id": "ely.word-count",
+  "name": "Contador de palabras",
+  "version": "1.0.0",
+  "publisher": "ely",
+  "description": "Cuenta líneas, palabras y caracteres del archivo abierto y lo muestra en la barra de estado.",
+  "main": "main.js",
+  "permissions": [
+    "editor",
+    "ui",
+    "commands"
+  ],
+  "activationEvents": [
+    "onStartup"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "id": "ely.wordCount.show",
+        "title": "Contador: mostrar detalle"
+      }
+    ]
+  },
+  "l10n": {
+    "en": {
+      "name": "Word count",
+      "description": "Words, lines and characters of the active file in the status bar, plus a detail command."
+    }
+  }
+}

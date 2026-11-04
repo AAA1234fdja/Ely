@@ -1,0 +1,30 @@
+{
+  "id": "ely.github-info",
+  "name": "Info de GitHub (comunicación externa)",
+  "version": "1.0.0",
+  "publisher": "ely",
+  "description": "Consulta la API pública de GitHub a través del proxy con permisos del host. Demuestra la comunicación externa real.",
+  "main": "main.js",
+  "permissions": [
+    "ui",
+    "commands",
+    "network:api.github.com"
+  ],
+  "activationEvents": [
+    "onStartup"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "id": "ely.githubInfo.lookup",
+        "title": "GitHub: información de un repositorio"
+      }
+    ]
+  },
+  "l10n": {
+    "en": {
+      "name": "GitHub info (external communication)",
+      "description": "Queries the public GitHub API through the host permissioned proxy. Demonstrates real external communication."
+    }
+  }
+}

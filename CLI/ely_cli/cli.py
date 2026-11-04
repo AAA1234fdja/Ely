@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import __version__, llm, mcp, repos
+from . import __version__, extensions, llm, mcp, repos
 from .agents import AGENTS, get_agent, workflows
 from .config import ConfigError, load_profiles, repo_root, resolve_key
 from .engine import Engine
@@ -556,6 +556,95 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_extensions(args: argparse.Namespace) -> int:
+    """Extensiones del IDE: instalar, activar y probar la salida de red."""
+    root = Engine().root
+    action = args.action
+    try:
+        if action == "list":
+            items = extensions.list_extensions(root)
+            if args.json:
+                print(json.dumps(items, indent=2, ensure_ascii=False))
+                return 0
+            if not items:
+                print(dim("  (no hay extensiones — usa `ely extensions install owner/repo`)"))
+                return 0
+            print(bold(f"\n  {len(items)} extensión(es)\n"))
+            for item in items:
+                mark = green("●") if item.get("enabled") else dim("○")
+                origin = dim("incluida") if item.get("builtin") else dim("instalada")
+                print(f"  {mark} {cyan(item['id']):<34} {item['version']:<9} {origin}  {dim(item.get('name') or '')}")
+                perms = ", ".join(item.get("permissions") or []) or "sin permisos"
+                print(dim(f"      permisos: {perms}"))
+            print()
+            return 0
+
+        if action == "install":
+            if not args.reference:
+                return fail("Falta el origen: ely extensions install owner/repo | npm:paquete | URL | ruta")
+            print(bold(f"\n  Instalando {args.reference}\n"))
+            result = extensions.install(root, args.reference)
+            ext = result.get("extension") or {}
+            print(green(f"  ✓ {ext.get('name')} {ext.get('version')}"))
+            print(dim(f"    id: {ext.get('id')}"))
+            print(dim(f"    permisos: {', '.join(ext.get('permissions') or []) or 'ninguno'}"))
+            print(dim(f"    archivos: {result.get('files', '—')}"))
+            print()
+            return 0
+
+        if action in ("enable", "disable"):
+            if not args.reference:
+                return fail(f"Falta el id: ely extensions {action} mi.extension")
+            result = extensions.set_enabled(root, args.reference, action == "enable")
+            ext = result.get("extension") or {}
+            print(green(f"  ✓ {ext.get('id')} · {'activada' if action == 'enable' else 'desactivada'}"))
+            return 0
+
+        if action == "uninstall":
+            if not args.reference:
+                return fail("Falta el id: ely extensions uninstall mi.extension")
+            extensions.uninstall(root, args.reference)
+            print(green(f"  ✓ desinstalada: {args.reference}"))
+            return 0
+
+        if action == "info":
+            if not args.reference:
+                return fail("Falta el id: ely extensions info mi.extension")
+            folder, manifest = extensions.find(root, args.reference)
+            if args.json:
+                print(json.dumps(manifest, indent=2, ensure_ascii=False))
+                return 0
+            print(bold(f"\n  {manifest['name']} {manifest['version']}\n"))
+            print(f"  id:        {manifest['id']}")
+            print(f"  editor:    {manifest.get('publisher') or '—'}")
+            print(f"  main:      {manifest.get('main') or '—'}")
+            print(f"  carpeta:   {folder}")
+            print(f"  permisos:  {', '.join(manifest.get('permissions') or []) or 'ninguno'}")
+            hosts = sorted(extensions.network_hosts(manifest))
+            print(f"  red:       {', '.join(hosts) if hosts else dim('sin salida de red')}")
+            print(dim(f"\n  {manifest.get('description') or ''}\n"))
+            return 0
+
+        if action == "fetch":
+            if not args.reference or not args.query:
+                return fail("Uso: ely extensions fetch <id> <url>")
+            result = extensions.fetch(root, args.reference, args.query)
+            if args.json:
+                print(json.dumps(result, indent=2, ensure_ascii=False))
+                return 0
+            status = result.get("status")
+            print(bold(f"\n  HTTP {status} · {result.get('ms')} ms · {len(result.get('text') or '')} bytes\n"))
+            print((result.get("text") or "")[:2000])
+            print()
+            return 0
+    except extensions.ExtensionError as exc:
+        print(bad(str(exc)))
+        if exc.detail:
+            print(dim(f"  detalle: {str(exc.detail)[:300]}"))
+        return 1
+    return fail(f"Acción desconocida: {action}")
+
+
 def cmd_repo(args: argparse.Namespace) -> int:
     """Descarga un repositorio Git real para abrirlo en el IDE."""
     if args.action == "list":
@@ -842,6 +931,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, default=400)
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_repo)
+
+    p = sub.add_parser("extensions", help="extensiones del IDE (instalar, activar, red)")
+    p.add_argument("action", choices=("list", "install", "uninstall", "enable", "disable", "info", "fetch"),
+                   help="list | install | uninstall | enable | disable | info | fetch")
+    p.add_argument("reference", nargs="?", help="owner/repo, npm:paquete, URL, ruta local o id de extensión")
+    p.add_argument("query", nargs="?", help="URL para la acción fetch")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_extensions)
 
     p = sub.add_parser("routes", help="vistas del IDE declaradas por el backend")
     p.add_argument("--json", action="store_true")

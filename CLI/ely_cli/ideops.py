@@ -274,18 +274,62 @@ def diff_text(a: str, b: str, la: str = "a", lb: str = "b") -> dict:
 
 # ------------------------------------------------------------------ símbolos / outline
 _SYM = {
-    "py": [r"^\s*(?:def|class)\s+(\w+)"],
-    "js": [r"^\s*(?:function|class)\s+(\w+)", r"^\s*(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?(?:\([^)]*\)|\w+)\s*=>"],
-    "ts": [r"^\s*(?:function|class|interface|enum)\s+(\w+)"],
+    "py": [r"^\s*(?:async\s+)?(?:def|class)\s+(\w+)"],
+    "js": [r"^\s*(?:export\s+)?(?:async\s+)?(?:function|class)\s+(\w+)", r"^\s*(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?(?:\([^)]*\)|\w+)\s*=>"],
+    "ts": [r"^\s*(?:export\s+)?(?:declare\s+)?(?:abstract\s+)?(?:function|class|interface|enum|type)\s+(\w+)"],
     "go": [r"^func\s+(?:\([^)]*\)\s*)?(\w+)", r"^type\s+(\w+)"],
-    "rs": [r"^\s*(?:fn|struct|enum|trait)\s+(\w+)"],
+    "rs": [r"^\s*(?:pub\s+)?(?:async\s+)?(?:fn|struct|enum|trait|impl|mod)\s+(\w+)"],
     "md": [r"^(#{1,6})\s+(.+)"],
+    "java": [r"^\s*(?:public|private|protected)?\s*(?:static\s+)?(?:final\s+)?(?:class|interface|enum|record)\s+(\w+)", r"^\s*(?:public|private|protected)\s+[\w<>\[\],\s]+\s+(\w+)\s*\("],
+    "kt": [r"^\s*(?:data\s+|sealed\s+|open\s+|abstract\s+)?(?:class|object|interface|fun)\s+(\w+)"],
+    "swift": [r"^\s*(?:public\s+|private\s+|internal\s+)?(?:class|struct|enum|protocol|extension|func)\s+(\w+)"],
+    "rb": [r"^\s*(?:def|class|module)\s+([\w.]+)"],
+    "php": [r"^\s*(?:abstract\s+|final\s+)?(?:class|interface|trait|function)\s+(\w+)", r"^\s*(?:public|private|protected)\s+(?:static\s+)?function\s+(\w+)"],
+    "c": [r"^[A-Za-z_][\w\s*]*\s+\*?(\w+)\s*\([^;]*$"],
+    "cpp": [r"^\s*(?:class|struct|namespace|enum)\s+(\w+)", r"^[A-Za-z_][\w:\s*<>,]*\s+\*?(\w+)\s*\([^;]*$"],
+    "cs": [r"^\s*(?:public|private|protected|internal)?\s*(?:static\s+|partial\s+|abstract\s+|sealed\s+)?(?:class|interface|struct|enum|record)\s+(\w+)", r"^\s*(?:public|private|protected|internal)\s+[\w<>\[\],\s]+\s+(\w+)\s*\("],
+    "scala": [r"^\s*(?:case\s+)?(?:class|object|trait|def)\s+(\w+)"],
+    "dart": [r"^\s*(?:abstract\s+)?class\s+(\w+)", r"^\s*(?:Future<[^>]*>|void|String|int|double|bool|Widget)\s+(\w+)\s*\("],
+    "lua": [r"^\s*(?:local\s+)?function\s+([\w.:]+)"],
+    "sh": [r"^\s*(?:function\s+)?(\w+)\s*\(\s*\)\s*\{"],
+    "sql": [r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:TABLE|VIEW|FUNCTION|PROCEDURE|INDEX)\s+(?:IF\s+NOT\s+EXISTS\s+)?([\w.\"`]+)"],
+    "tf": [r"^\s*(?:resource|variable|output|module|data)\s+\"([^\"]+)\"(?:\s+\"([^\"]+)\")?"],
+    "yml": [r"^([\w.-]+):\s*$"],
+    "yaml": [r"^([\w.-]+):\s*$"],
+    "ex": [r"^\s*(?:defmodule|def|defp)\s+([\w.]+)"],
+    "hs": [r"^(\w+)\s*::", r"^(?:data|type|newtype|class)\s+(\w+)"],
+    "sol": [r"^\s*(?:contract|interface|library|function|event|modifier)\s+(\w+)"],
+    "proto": [r"^\s*(?:message|enum|service|rpc)\s+(\w+)"],
+    "graphql": [r"^\s*(?:type|interface|enum|input|union|scalar)\s+(\w+)"],
+    "tex": [r"^\\(?:section|subsection|chapter|subsubsection)\*?\{([^}]+)\}"],
+    "rst": [r"^(.{3,})\n[=\-~^\"]{3,}\s*$"],
+    "toml": [r"^\s*\[+([\w.-]+)\]+"],
+    "ini": [r"^\s*\[([^\]]+)\]"],
+    "dockerfile": [r"^\s*FROM\s+(\S+)(?:\s+AS\s+(\w+))?"],
+    "vim": [r"^\s*(?:function!?|command!?)\s+([\w:]+)"],
+    "ps1": [r"^\s*function\s+([\w-]+)"],
+    "pl": [r"^\s*sub\s+(\w+)"],
+    "r": [r"^(\w+)\s*<-\s*function"],
+    "jl": [r"^\s*(?:function|struct|module|macro)\s+(\w+)"],
+    "zig": [r"^\s*(?:pub\s+)?fn\s+(\w+)"],
+    "nim": [r"^\s*(?:proc|func|type|template|macro)\s+(\w+)"],
+    "clj": [r"^\s*\((?:defn|defmacro|def|ns|defrecord)\s+([\w.-]+)"],
+    "v": [r"^\s*module\s+(\w+)", r"^\s*(?:input|output)\s+(?:wire|reg|logic)?\s*(\w+)"],
+    "mk": [r"^([\w.-]+)\s*:(?!=)"],
+    "cmake": [r"^\s*(?:function|macro)\s*\(\s*(\w+)", r"^\s*project\s*\(\s*(\w+)"],
 }
 
 
 def symbols(root: Path, rel: str) -> dict:
     t = _safe(root, rel)
     ext = t.suffix.lower().lstrip(".")
+    base = t.name.lower()
+    if base in ("dockerfile", "containerfile"):
+        ext = "dockerfile"
+    elif base in ("makefile", "gnumakefile"):
+        ext = "mk"
+    elif base == "cmakelists.txt":
+        ext = "cmake"
     pats = _SYM.get(ext, _SYM["js"])
     out = []
     try:
@@ -296,8 +340,9 @@ def symbols(root: Path, rel: str) -> dict:
         for pat in pats:
             m = re.match(pat, line)
             if m:
-                name = m.group(2) if ext == "md" else m.group(1)
-                out.append({"name": name, "line": i, "kind": "heading" if ext == "md" else "symbol"})
+                groups = [g for g in m.groups() if g]
+                name = " · ".join(groups) if ext in ("md", "tf", "dockerfile") else (groups[0] if groups else m.group(0).strip())
+                out.append({"name": name, "line": i, "kind": "heading" if ext in ("md", "rst", "tex") else "symbol"})
                 break
     return {"symbols": out}
 

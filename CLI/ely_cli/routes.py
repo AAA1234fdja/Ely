@@ -12,6 +12,8 @@ NAV: list[dict[str, Any]] = [
     {"group": "Desarrollo", "items": [
         {"id": "ide", "label": "IDE", "desc": "Editor de código con IA",
          "icon": "⌘", "title": "IDE"},
+        {"id": "extensions", "label": "Extensiones", "desc": "Instala y activa extensiones con permisos",
+         "icon": "⧉", "title": "Extensiones"},
     ]},
     {"group": "Orquestación", "items": [
         {"id": "dashboard", "label": "Dashboard", "desc": "Resumen de sesión y acciones",
