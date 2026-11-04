@@ -62,7 +62,7 @@ propia en JS plano (`views/ide.js`, 1016 líneas). Por tanto, todo lo que VS Cod
 | `fontZoom` | ❌ | Ctrl+± para tamaño de fuente del editor | 🌐 |
 | `toggleTabFocusMode` | ❌ | Ctrl+M: Tab mueve el foco en vez de indentar (accesibilidad) | 🌐 **fase 3** |
 | `dnd`, `clipboard`, `contextmenu`, `middleScroll`, `anchorSelect`, `cursorUndo`, `lineSelection`, `wordOperations`, `wordPartOperations`, `caretOperations`, `inPlaceReplace` | 🟡 | Comportamiento nativo del `textarea` cubre lo básico; faltan atajos avanzados | 🌐 |
-| `tokenization`, `semanticTokens` | 🟡 | `syntax.js` resalta 41 lenguajes con regex; sin tokens semánticos | 🌐 limitado / ⛔ LSP |
+| `tokenization`, `semanticTokens` | 🟡 | `syntax.js` resalta 261 lenguajes (93 familias) con regex; sin tokens semánticos | 🌐 limitado / ⛔ LSP |
 | `peekView`, `zoneWidget`, `floatingMenu`, `inlineProgress`, `message`, `placeholderText`, `readOnlyMessage`, `longLinesHelper`, `sectionHeaders`, `editorState`, `diffEditorBreadcrumbs`, `symbolIcons`, `linkedEditing`, `insertFinalNewLine`, `dropOrPasteInto`, `quickAccess`, `inlineCompletions`, `gpu` | ❌ | Widgets sobre el editor, edición enlazada de etiquetas, autocompletado IA inline, render GPU | 🌐 mayormente / ⛔ IA inline |
 | `codeAction` | ❌ | Quick fixes (bombilla) | ⛔ LSP |
 
@@ -137,7 +137,7 @@ lenguajes, temas Dark+/Light+, `typescript-language-features`, `json-language-fe
 
 - 🌐 **Aprovechable sin compilar VS Code:** los `.tmTheme`/`.json` de temas y las gramáticas
   TextMate se pueden leer como datos (requiere un tokenizador TextMate en JS, ~600 líneas, o
-  usar `shiki` desde npm). Hoy `syntax.js` usa regex propias para 41 lenguajes.
+  usar `shiki` desde npm). Hoy `syntax.js` usa regex propias para 93 familias que cubren los 261 lenguajes del catálogo.
 - ⛔ **No aprovechable:** los `*-language-features` arrancan servidores LSP en Node.
 
 ---
@@ -181,19 +181,22 @@ documentación y los atajos sean familiares.
 | 2c | IDE: bienvenida VS Code (Start/Recent/Walkthroughs), quick pick «New File», Untitled-N, selector de lenguaje, pista del editor | **720** | ✅ |
 | 3 | **Extensiones + comunicación externa**: backend (`extensions.py` 770), host en sandbox (`ext-host.js` 470), autocompletado con Tab (`completion.js` 574), vista Extensiones (227), 3 extensiones incluidas, CLI `ely extensions` | **≈ 2.900** | ✅ |
 | 4 | **Lenguajes + Explorador VS Code**: catálogo de 165 lenguajes (267), resaltado por familias (209), Explorer con carpeta raíz y 4 acciones, creación en línea, Outline y Timeline | **≈ 730** | ✅ |
-| — | **Consumido** | **≈ 7.550 / 10.000** | margen ≈ 2.450 |
+| 4b | **Más lenguajes + assets**: 261 lenguajes (+105), 93 familias (+26), `icons.js` reescrito (265), galería `/icons.html` (143) y **345 SVG** | **≈ 480** | ✅ |
+| — | **Consumido** | **≈ 8.030 / 10.000** | margen ≈ 1.970 |
 | 5 | Editor: plegado de código, bracket matching, sticky scroll, minimapa | ~1.000 | propuesto |
 | 6 | Workbench: editor de atajos, modo Zen, Emmet, preview Markdown, multi-diff | ~900 | propuesto |
 
-### Verificación de las fases 2, 3 y 4 (no solo «está escrito»)
+### Verificación de las fases 2, 3, 4 y 4b (no solo «está escrito»)
 
 | Prueba | Resultado |
 |---|---|
-| `python3 -m unittest discover -s CLI/tests` | **161/161 OK** (93 previos + 68 de extensiones) |
+| `python3 -m unittest discover -s CLI/tests` | **203/203 OK** (93 previos + 68 de extensiones + 42 de lenguajes e iconos) |
 | Harness jsdom del chat contra el backend real | **36/36 OK** |
 | Harness jsdom del IDE + accesibilidad | **65/65 OK** |
 | Harness jsdom de **extensiones + Tab** | **100/100 OK** |
-| Harness jsdom de **Explorador + lenguajes** | **64/64 OK** |
+| Harness jsdom de **Explorador + lenguajes + iconos** | **78/78 OK** |
+| Harness jsdom de la **galería de assets** (`/icons.html`) | **19/19 OK** |
+| Assets servidos por `ely serve` | **0 errores 404** en el muestreo (33 del IDE + 32 de la galería) |
 | Auditoría de idioma recorriendo **20 rutas** con `language=en` | **0 textos en español sin traducir** (antes: 117) |
 | Ida y vuelta de idioma ES→EN→ES | **40/40 OK** |
 | Comunicación externa real | `GET https://api.github.com/repos/microsoft/vscode` → **HTTP 200** a través del proxy con permiso |
@@ -226,9 +229,10 @@ palabras clave → palabras del archivo. Respeta el modo *Tab mueve el foco*
 
 ### Fase 4 · Lenguajes y Explorador como VS Code
 
-- **165 lenguajes** en `js/languages.js`, con detección por extensión y por
-  nombre de archivo (`Dockerfile`, `CMakeLists.txt`, `.env`, `tsconfig.json`…),
-  y resaltado por **79 familias** en `js/syntax.js`.
+- **261 lenguajes** en `js/languages.js` (165 en la fase 4, +96 en la 4b), con
+  detección por extensión y por nombre de archivo (`Dockerfile`, `CMakeLists.txt`,
+  `.env`, `tsconfig.json`, `.vimrc`, `Snakefile`, `project.godot`…), y resaltado
+  por **93 familias** en `js/syntax.js`.
 - **Explorador** con cabecera y menú «⋯», fila de carpeta raíz plegable con el
   nombre del proyecto y las cuatro acciones de VS Code: **Nuevo archivo, Nueva
   carpeta, Refrescar y Contraer carpetas**. La creación es en línea dentro del
@@ -239,6 +243,27 @@ palabras clave → palabras del archivo. Respeta el modo *Tab mueve el foco*
 - Menú **Ayuda** (Bienvenida, Comandos, Atajos, Accesibilidad, Acerca de) y el
   estado del IDE (proyecto, pestañas, carpetas abiertas) sobrevive a los cambios
   de idioma y de vista.
+
+### Fase 4b · Más lenguajes y assets de iconos
+
+- **261 lenguajes** y **93 familias** de resaltado. Se separaron Objective-C y
+  Objective-C++ (`.m` / `.mm`) siguiendo el criterio de VS Code, y se añadieron
+  comentarios propios para Vim (`"`), Smalltalk (`"…"`), Forth (`\`) y
+  AutoHotkey (`;`).
+- **345 SVG** en `IDE/frontend/icons/` tomados de **Material Icon Theme** (MIT,
+  licencia incluida en la carpeta). Cada lenguaje del catálogo tiene su icono:
+  sólo *Plain Text* cae en el documento genérico. Para los 18 lenguajes que el
+  pack no cubre se generaron iconos propios `ely-*.svg`.
+- Resolución igual que VS Code: **nombre de archivo → extensión → lenguaje →
+  documento**. Además de código, hay iconos para imágenes, vídeo, audio, fuentes,
+  comprimidos, ofimática y certificados, y **~150 nombres de carpeta**
+  (`src`, `tests`, `docs`, `assets`, `node_modules`, `.github`…) con variante
+  abierta/cerrada.
+- El árbol, las pestañas, el selector de modo y el quick pick «Nuevo archivo»
+  usan el icono real, incluido el modo de lenguaje fijado a mano. Los `<img>`
+  son decorativos (`alt=""`, `aria-hidden`), perezosos y con *fallback*.
+- **Galería `/icons.html`** para ver y buscar los 345 assets por lenguaje,
+  extensión o carpeta, en ES · EN, con la atribución del pack.
 
 La auditoría de idioma es un recorrido real: carga la app servida por `ely serve`
 en un DOM, cambia el idioma y visita las 18 rutas del nav más el chat, revisando

@@ -65,7 +65,6 @@
     }
     function langLabel(id) { const l = LANGS.find((x) => x[0] === id); return l ? l[1] : id; }
     function langExt(id) { const l = LANGS.find((x) => x[0] === id); return l ? l[2] : "txt"; }
-    function iconPath(path) { return state.langMode[path] ? "file." + langExt(state.langMode[path]) : path; }
 
     /* ------------------------------------------------------------------ *
      * Quick pick estilo VS Code: caja arriba al centro, filtro y lista    *
@@ -181,7 +180,7 @@
         items: LANGS.map((l) => ({
           id: l[0], label: l[1], description: "(" + l[0] + ")",
           detail: current === l[0] ? T("ide.currentLanguage") : "",
-          icon: window.Icons ? Icons.file("file." + l[2], 15) : null
+          icon: window.Icons ? Icons.language(l[0], 15) : null
         })),
         onPick: (item) => {
           state.langMode[state.active] = item.id;
@@ -966,7 +965,7 @@
             "data-full": full, "data-type": "dir", "data-depth": String(depth), "data-open": open ? "1" : "0"
           }, [
             UI.el("span", { class: "vsc-caret", text: open ? "▾" : "▸" }),
-            window.Icons ? Icons.folder(open) : null,
+            window.Icons ? Icons.folder(open, 16, entry.path.split("/").pop()) : null,
             UI.el("span", { class: "trunc", text: entry.path.split("/").pop() })
           ]);
           node.style.paddingLeft = (6 + depth * 12) + "px";
@@ -1076,7 +1075,7 @@
           class: "vsc-tab" + (path === state.active ? " on" : "") + (isUntitled(path) ? " untitled" : ""),
           title: path, "data-path": path
         }, [
-          window.Icons ? Icons.file(iconPath(path), 14) : null,
+          window.Icons ? (state.langMode[path] ? Icons.language(state.langMode[path], 14) : Icons.file(path, 14)) : null,
           UI.el("span", { text: docName(path) }),
           state.dirty[path] ? UI.el("span", { class: "dotm", title: T("ide.unsaved") }) : null,
           UI.el("button", {
@@ -1556,7 +1555,7 @@
       favs.forEach((id) => {
         const l = LANGS.find((x) => x[0] === id);
         if (!l || id === "plaintext") return;
-        items.push({ id: l[0], label: l[1], description: "(" + l[0] + ")", icon: window.Icons ? Icons.file("file." + l[2], 15) : null });
+        items.push({ id: l[0], label: l[1], description: "(" + l[0] + ")", icon: window.Icons ? Icons.language(l[0], 15) : null });
       });
       quickPick({
         title: T("ide.newFile"),

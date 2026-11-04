@@ -93,7 +93,23 @@
     http: ["hash", "GET POST PUT PATCH DELETE HEAD OPTIONS TRACE CONNECT HTTP Authorization Content-Type Accept"],
     csv: ["none", ""],
     log: ["none", "ERROR WARN WARNING INFO DEBUG TRACE FATAL CRITICAL"],
-    text: ["none", ""]
+    text: ["none", ""],
+
+    /* --- familias de la ampliación de lenguajes --- */
+    coffee: ["hash", "if else unless then for while until loop switch when break continue return throw try catch finally class extends super new delete typeof instanceof in of by do yield await defer and or not is isnt yes no on off true false null undefined this"],
+    gdscript: ["hash", "extends class_name func var const enum signal static onready export tool if elif else for while match break continue return pass yield await assert breakpoint preload self super true false null and or not in is as void int float String bool Vector2 Vector3 Node"],
+    haxe: ["slash", "class interface enum abstract typedef extends implements public private static inline dynamic override function var return if else for while do switch case break continue new this super null true false import package using try catch finally throw cast untyped macro"],
+    nix: ["hash", "let in rec inherit with if then else assert import builtins derivation true false null or and"],
+    vim: ["none", "function endfunction endf if elseif else endif for endfor while endwhile try catch finally endtry return let set setlocal augroup autocmd command noremap nnoremap inoremap vnoremap map execute call echo echom silent normal source finish abort range"],
+    smalltalk: ["none", "self super thisContext true false nil new subclass initialize yourself ifTrue ifFalse whileTrue whileFalse do collect select reject detect inject to timesRepeat repeat class method return not and or"],
+    forth: ["none", "variable constant create does if else then begin until while repeat do loop case of endof endcase exit recurse include require dup drop swap over rot nip tuck emit cr space spaces type accept number immediate postpone literal allot cells cell+ char chars here count move fill compare"],
+    autohotkey: ["semi", "if else return loop while for goto gosub break continue global local static Send SendInput Click MsgBox InputBox Hotkey SetTimer Sleep Run WinActivate WinWait IfWinExist Gui GuiControl OnExit ExitApp"],
+    gnuplot: ["hash", "set unset plot splot replot fit using with title axis xlabel ylabel zlabel xrange yrange terminal output style line linewidth linecolor pointtype palette grid key legend logscale"],
+    rebol: ["semi", "func function does has return if either case switch loop foreach forall forskip while until repeat break continue exit do reduce compose make object context set get print probe mold form any all none true false"],
+    qml: ["slash", "import property signal readonly default alias function var return if else for while switch case break continue new this true false null Component Item Rectangle Text MouseArea Column Row anchors width height color visible enabled focus"],
+    odin: ["slash", "package import foreign when if else for in switch case break continue return defer or_else or_return proc struct union enum bit_set bit_field distinct using dynamic cast transmute auto_cast nil true false size_of align_of type_of len cap append delete new free make"],
+    gleam: ["slash", "pub fn let const type import as case if else use todo panic assert opaque external record tuple list result ok error true false"],
+    yara: ["slash", "rule meta strings condition private global import include and or not any all of them filesize uint8 uint16 uint32 int8 int16 int32 at in contains matches for"]
   };
 
   const LINE_COMMENT = {
@@ -107,6 +123,11 @@
     dash: null, hash: null, percent: null, semi: null, star: null, none: null
   };
   const HASH_BLOCK = ["python", "ruby", "elixir", "crystal", "powershell"];
+  /* Vim usa " como comentario; Smalltalk y Forth tienen delimitadores propios. */
+  LINE_COMMENT.vim = /"[^\n]*/y;
+  LINE_COMMENT.smalltalk = /"[^"]*"/y;
+  LINE_COMMENT.forth = /\\[^\n]*/y;
+  LINE_COMMENT.autohotkey = /;[^\n]*/y;
 
   function familyOf(lang) {
     const id = String(lang || "").toLowerCase();
@@ -232,7 +253,8 @@
     const kws = String(spec[1] || "").split(/\s+/).filter(Boolean)
       .map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
     if (kws.length) {
-      const ci = ["sql", "cobol", "fortran", "basic", "ada", "abap", "sas", "stata", "bat", "batch"].includes(fam);
+      const ci = ["sql", "cobol", "fortran", "basic", "ada", "abap", "sas", "stata", "bat", "batch",
+        "forth", "smalltalk", "autohotkey", "gnuplot", "rebol", "vim"].includes(fam);
       rules.push(["kw", new RegExp("\\b(?:" + kws.join("|") + ")\\b", ci ? "iy" : "y")]);
     }
     rules.push(["fn", /[A-Za-z_]\w*(?=\s*\()/y]);

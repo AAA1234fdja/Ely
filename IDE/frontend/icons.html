@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ely · Assets de iconos</title>
+<style>
+  :root { color-scheme: dark; --bg: #1e1e1e; --panel: #252526; --line: #333; --fg: #d4d4d4; --dim: #9d9d9d; --accent: #4daafc; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 "Segoe UI", system-ui, sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; background: var(--panel); border-bottom: 1px solid var(--line); padding: 14px 20px; }
+  h1 { margin: 0 0 2px; font-size: 16px; font-weight: 600; }
+  .sub { color: var(--dim); font-size: 12px; }
+  .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  input[type="search"] { flex: 1 1 240px; min-width: 180px; background: #3c3c3c; color: var(--fg); border: 1px solid #3c3c3c; border-radius: 3px; padding: 6px 9px; font: inherit; }
+  input[type="search"]:focus { outline: 1px solid var(--accent); }
+  button { background: #333; color: var(--fg); border: 1px solid var(--line); border-radius: 3px; padding: 5px 10px; font: inherit; cursor: pointer; }
+  button[aria-pressed="true"] { background: #04395e; border-color: var(--accent); color: #fff; }
+  main { padding: 16px 20px 40px; }
+  h2 { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin: 22px 0 10px; font-weight: 600; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 8px; }
+  .card { display: flex; gap: 9px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 8px 9px; min-width: 0; }
+  .card img { width: 24px; height: 24px; flex: none; }
+  .card b { display: block; font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card span { display: block; font-size: 10px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .empty { color: var(--dim); padding: 14px 0; }
+  footer { border-top: 1px solid var(--line); margin-top: 28px; padding-top: 12px; color: var(--dim); font-size: 12px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1 data-es="Assets de iconos del IDE" data-en="IDE icon assets">Assets de iconos del IDE</h1>
+  <div class="sub" id="sub"></div>
+  <div class="bar">
+    <input type="search" id="q" autocomplete="off" aria-label="Filtrar" placeholder="Buscar lenguaje, extensión o carpeta…">
+    <button type="button" data-group="all" aria-pressed="true" data-es="Todo" data-en="All">Todo</button>
+    <button type="button" data-group="lang" aria-pressed="false" data-es="Lenguajes" data-en="Languages">Lenguajes</button>
+    <button type="button" data-group="file" aria-pressed="false" data-es="Archivos" data-en="Files">Archivos</button>
+    <button type="button" data-group="folder" aria-pressed="false" data-es="Carpetas" data-en="Folders">Carpetas</button>
+    <button type="button" id="langToggle" title="ES / EN">EN</button>
+  </div>
+</header>
+<main>
+  <section data-sec="lang"><h2 data-es="Lenguajes" data-en="Languages">Lenguajes</h2><div class="grid" id="gLang"></div></section>
+  <section data-sec="file"><h2 data-es="Tipos de archivo" data-en="File types">Tipos de archivo</h2><div class="grid" id="gFile"></div></section>
+  <section data-sec="folder"><h2 data-es="Carpetas" data-en="Folders">Carpetas</h2><div class="grid" id="gFolder"></div></section>
+  <div class="empty" id="empty" hidden data-es="Sin resultados." data-en="No results.">Sin resultados.</div>
+  <footer>
+    <span data-es="Iconos de" data-en="Icons from">Iconos de</span>
+    <a href="https://github.com/material-extensions/vscode-material-icon-theme" rel="noreferrer noopener" target="_blank">Material Icon Theme</a>
+    (MIT, © 2025 Material Extensions).
+    <span data-es="Los iconos con prefijo" data-en="Icons prefixed">Los iconos con prefijo</span> <code>ely-</code>
+    <span data-es="son propios de Ely y cubren lenguajes que el pack no incluye." data-en="are Ely's own and cover languages the pack does not include.">son propios de Ely y cubren lenguajes que el pack no incluye.</span>
+  </footer>
+</main>
+<script src="js/languages.js"></script>
+<script src="js/icons.js"></script>
+<script>
+(function () {
+  "use strict";
+  var lang = "es";
+  try { lang = (JSON.parse(localStorage.getItem("ely.settings.v09") || "{}").language) === "en" ? "en" : "es"; } catch (e) { /* es */ }
+  var group = "all", query = "";
+  var cat = window.Icons.catalog;
+
+  function card(icon, title, sub) {
+    var box = document.createElement("div");
+    box.className = "card";
+    box.title = icon + ".svg";
+    var img = document.createElement("img");
+    img.src = "icons/" + icon + ".svg";
+    img.alt = ""; img.loading = "lazy"; img.decoding = "async";
+    var text = document.createElement("div");
+    text.style.minWidth = "0";
+    var b = document.createElement("b"); b.textContent = title;
+    var s = document.createElement("span"); s.textContent = sub;
+    text.appendChild(b); text.appendChild(s);
+    box.appendChild(img); box.appendChild(text);
+    box.dataset.key = (title + " " + sub + " " + icon).toLowerCase();
+    return box;
+  }
+
+  function build() {
+    var gL = document.getElementById("gLang"), gF = document.getElementById("gFile"), gD = document.getElementById("gFolder");
+    window.Languages.list.forEach(function (row) {
+      gL.appendChild(card(window.Icons.forLanguage(row[0]), row[1], row[0]));
+    });
+    Object.keys(cat.byExt).sort().forEach(function (ext) {
+      gF.appendChild(card(cat.byExt[ext], "." + ext, cat.byExt[ext]));
+    });
+    Object.keys(cat.byName).sort().forEach(function (name) {
+      gF.appendChild(card(cat.byName[name], name, cat.byName[name]));
+    });
+    Object.keys(cat.folders).sort().forEach(function (name) {
+      gD.appendChild(card(cat.folders[name], name + "/", cat.folders[name]));
+    });
+    document.getElementById("sub").textContent =
+      window.Icons.count + " SVG · " + window.Icons.languages + (lang === "en" ? " languages" : " lenguajes") +
+      " · " + Object.keys(cat.folders).length + (lang === "en" ? " folder names" : " nombres de carpeta");
+  }
+
+  function apply() {
+    var shown = 0;
+    document.querySelectorAll("section[data-sec]").forEach(function (sec) {
+      var visible = group === "all" || group === sec.dataset.sec;
+      var count = 0;
+      sec.querySelectorAll(".card").forEach(function (c) {
+        var ok = visible && (!query || c.dataset.key.indexOf(query) >= 0);
+        c.hidden = !ok;
+        if (ok) count += 1;
+      });
+      sec.hidden = count === 0;
+      shown += count;
+    });
+    document.getElementById("empty").hidden = shown > 0;
+  }
+
+  function translate() {
+    document.documentElement.lang = lang;
+    document.querySelectorAll("[data-es]").forEach(function (n) { n.textContent = n.dataset[lang]; });
+    document.getElementById("q").placeholder = lang === "en" ? "Search language, extension or folder…" : "Buscar lenguaje, extensión o carpeta…";
+    document.getElementById("langToggle").textContent = lang === "en" ? "ES" : "EN";
+    document.getElementById("sub").textContent =
+      window.Icons.count + " SVG · " + window.Icons.languages + (lang === "en" ? " languages" : " lenguajes") +
+      " · " + Object.keys(cat.folders).length + (lang === "en" ? " folder names" : " nombres de carpeta");
+  }
+
+  document.getElementById("q").addEventListener("input", function (e) { query = e.target.value.trim().toLowerCase(); apply(); });
+  document.querySelectorAll("button[data-group]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      group = b.dataset.group;
+      document.querySelectorAll("button[data-group]").forEach(function (o) { o.setAttribute("aria-pressed", String(o === b)); });
+      apply();
+    });
+  });
+  document.getElementById("langToggle").addEventListener("click", function () { lang = lang === "en" ? "es" : "en"; translate(); });
+
+  build(); translate(); apply();
+})();
+</script>
+</body>
+</html>

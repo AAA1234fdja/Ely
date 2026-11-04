@@ -540,8 +540,8 @@ marketplace de extensiones no se simulan en web; quedan pendientes de un backend
 
 ## Añadidos verificados (fase 4 · lenguajes y Explorador)
 
-- ✅ **485.** Catálogo de **165 lenguajes** (`js/languages.js`) con detección por extensión y nombre
-- ✅ **486.** Resaltado por familias (79) para todos los modos del catálogo
+- ✅ **485.** Catálogo de **261 lenguajes** (`js/languages.js`) con detección por extensión y nombre
+- ✅ **486.** Resaltado por familias (93) para todos los modos del catálogo
 - ✅ **487.** Cabecera del Explorador con menú «⋯» (ordenar, ocultos, refrescar, contraer)
 - ✅ **488.** Fila de carpeta raíz plegable con el nombre del proyecto
 - ✅+🔌 **489.** Acciones del Explorador: Nuevo archivo, Nueva carpeta, Refrescar, Contraer carpetas
@@ -551,3 +551,18 @@ marketplace de extensiones no se simulan en web; quedan pendientes de un backend
 - ✅+🔌 **493.** Outline para más de 35 lenguajes (antes 6)
 - ✅ **494.** Menú Ayuda con Bienvenida, Comandos, Atajos, Accesibilidad y Acerca de
 - ✅ **495.** El IDE conserva proyecto y pestañas al cambiar de idioma o de vista
+
+## Añadidos verificados (fase 4b · más lenguajes y assets de iconos)
+
+- ✅ **496.** **+96 lenguajes** (165 → **261**): CoffeeScript, GDScript, Haxe, Nix, Vim script, Smalltalk, Forth, AutoHotkey, gnuplot, REBOL, QML, Odin, Gleam, YARA, Mojo, Vala, Raku, ReScript, TLA+, Snakemake, Nextflow…
+- ✅ **497.** **+14 familias de resaltado** (79 → **93**) con palabras clave, comentarios propios (`"` en Vim, `"…"` en Smalltalk, `\` en Forth, `;` en AutoHotkey) y coincidencia sin distinción de mayúsculas donde toca
+- ✅ **498.** Objective-C y Objective-C++ separados (`.m` / `.mm`), como VS Code
+- ✅+🔌 **499.** **345 assets SVG** en `IDE/frontend/icons/` (Material Icon Theme, MIT) servidos por `ely serve`
+- ✅ **500.** **Icono propio para cada uno de los 261 lenguajes**; sólo *Plain Text* usa el documento genérico
+- ✅ **501.** 18 iconos propios (`ely-*.svg`) para lenguajes que el pack no incluye
+- ✅ **502.** Iconos por **nombre de archivo** (~120: `Dockerfile`, `package.json`, `LICENSE`, `.env`…) y por **extensión** (~70, incluidos imágenes, vídeo, audio, fuentes, comprimidos y certificados)
+- ✅ **503.** Iconos de **carpeta por nombre** (~150: `src`, `tests`, `docs`, `assets`, `node_modules`, `.github`…) con variante abierta/cerrada
+- ✅ **504.** Pestañas, árbol, selector de lenguaje y «Nuevo archivo» usan el icono del lenguaje real (también del modo manual)
+- ✅ **505.** Iconos accesibles (`alt=""`, `aria-hidden`, `loading="lazy"`) con *fallback* a `document.svg` si un asset no carga
+- ✅ **506.** Galería de assets en **`/icons.html`**: buscador, filtros (lenguajes/archivos/carpetas), ES · EN y atribución
+- ✅ **507.** Licencia MIT del pack incluida junto a los SVG (`icons/LICENSE-material-icon-theme.txt`)
