@@ -364,9 +364,9 @@ class Engine:
         from . import workspace
         return workspace.upload(self.root, rel, data)
 
-    def run_command(self, command: str, cwd: str = "") -> dict[str, Any]:
+    def run_command(self, command: str, cwd: str = "", profile: str = "") -> dict[str, Any]:
         from . import workspace
-        return workspace.run_command(self.root, command, cwd)
+        return workspace.run_command(self.root, command, cwd, profile)
 
     def ide_call(self, op: str, args: dict[str, Any]) -> dict[str, Any]:
         from . import ideops

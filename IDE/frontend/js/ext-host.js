@@ -42,6 +42,7 @@
 
   function log(extId, level, text) {
     if (level === "error") console.warn("[ext " + extId + "]", text);
+    if (window.Output) Output.log("Extension Host", "[" + level + "] " + extId + ": " + text);
     const ext = byId(extId);
     if (ext) { ext.lastMessage = String(text).slice(0, 300); ext.lastLevel = level; }
     notify("log");

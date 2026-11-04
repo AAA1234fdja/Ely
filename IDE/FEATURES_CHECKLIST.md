@@ -566,3 +566,28 @@ marketplace de extensiones no se simulan en web; quedan pendientes de un backend
 - ✅ **505.** Iconos accesibles (`alt=""`, `aria-hidden`, `loading="lazy"`) con *fallback* a `document.svg` si un asset no carga
 - ✅ **506.** Galería de assets en **`/icons.html`**: buscador, filtros (lenguajes/archivos/carpetas), ES · EN y atribución
 - ✅ **507.** Licencia MIT del pack incluida junto a los SVG (`icons/LICENSE-material-icon-theme.txt`)
+
+## Añadidos verificados (fase 4c · panel inferior y terminal como VS Code)
+
+- ✅+🔌 **508.** Panel con las 5 pestañas de VS Code (Problems, Output, Debug Console, Terminal, Ports) en caja normal, no mayúsculas
+- ✅ **509.** Barra de acciones **por pestaña** a la derecha (perfil, +, dividir, papelera, ⋯, maximizar, cerrar)
+- ✅+🔌 **510.** **Varias terminales** con lista lateral numerada (`1: Bash`, `2: Bash`), cambio por clic y papelera por terminal
+- ✅+🔌 **511.** **Dividir terminal** en paneles lado a lado (hasta 3), cada uno con su cwd, historial y salida
+- ✅+🔌 **512.** **Perfiles reales** detectados en el backend (bash, zsh, sh, fish, PowerShell, Python, Node): nada de perfiles falsos
+- ✅ **513.** Prompt con el estilo de cada intérprete (`usuario@host:~/ruta$`, `PS /ruta>`, `>>>`, `>`) y decoración de estado del comando
+- ✅ **514.** Menú «+» completo: Nueva terminal (Ctrl+Shift+Ñ), Nueva ventana (Ctrl+Shift+Alt+Ñ), Dividir (Ctrl+Shift+5), perfiles, Dividir con perfil ›, Configurar terminal, Perfil predeterminado, Ejecutar tarea…, Configurar tareas…
+- ✅ **515.** Menús con **atajo a la derecha** y **submenús** (como VS Code)
+- ✅+🔌 **516.** Ejecución real por perfil (`POST /api/terminal/exec` con `profile`), historial ↑/↓, `clear` y `exit` locales, Ctrl+L
+- ✅+🔌 **517.** **Ejecutar tarea…** con tareas de `.ely/tasks.json` o deducidas de `package.json` y `Makefile`
+- ✅ **518.** **Configurar tareas…** crea y abre `.ely/tasks.json`
+- ✅+🔌 **519.** Panel **Salida** con canales reales (Tasks, Ely, Extension Host, Git, Terminal, Window), selector y marcas de tiempo
+- ✅ **520.** Filtro de salida estilo VS Code (`texto`, `!excluir`, `"frase exacta"`), limpiar y bloquear desplazamiento
+- ✅+🔌 **521.** Panel **Problemas** con diagnóstico real (sintaxis Python/JSON del búfer abierto), contadores ⊗/⚠ y salto a la línea
+- ✅+🔌 **522.** Panel **Puertos** con los puertos en escucha reales (`/proc/net/tcp`), proceso y PID, y enlace al host de la vista previa
+- ✅ **523.** **Maximizar/restaurar** el panel (oculta el editor) y ocultarlo con ×
+- ✅ **524.** Barra del editor con **▷ Ejecutar** + menú de ejecución y **⋯ del grupo**: Mostrar editores abiertos, Cerrar todo (Ctrl+K W), Cerrar guardados (Ctrl+K U), Editores de vista previa, Maximizar grupo (Ctrl+K Ctrl+M), Bloquear grupo, Configurar editores
+- ✅ **525.** **Pestañas en vista previa** en cursiva: un clic reemplaza, editar o doble clic fija
+- ✅ **526.** La terminal y sus paneles **sobreviven** al cambio de idioma, de vista y de proyecto
+- ✅ **527.** Todo el panel en **ES · EN** (88 claves nuevas) y accesible (tablist, log en vivo, señales de comando)
+- ⛔ **528.** Dividir el **editor** en grupos (el icono de split del editor de VS Code): pendiente; el split implementado es el de la terminal
+- ⛔ **529.** Terminal PTY interactiva (vim, top, ssh): la ejecución es por líneas, no hay pseudo-terminal

@@ -348,16 +348,43 @@ def symbols(root: Path, rel: str) -> dict:
 
 
 # ------------------------------------------------------------------ tareas
+def _detected_tasks(root: Path) -> list[dict]:
+    """Tareas deducidas del proyecto cuando no hay tasks.json (como VS Code)."""
+    out: list[dict] = []
+    pkg = root / "package.json"
+    if pkg.is_file():
+        try:
+            scripts = json.loads(pkg.read_text(encoding="utf-8")).get("scripts", {})
+            for name, cmd in list(scripts.items())[:40]:
+                out.append({"label": "npm: " + name, "command": "npm run " + name,
+                            "detail": str(cmd)[:120], "source": "package.json"})
+        except (OSError, json.JSONDecodeError):
+            pass
+    mk = next((root / n for n in ("Makefile", "makefile", "GNUmakefile") if (root / n).is_file()), None)
+    if mk is not None:
+        try:
+            for line in mk.read_text(encoding="utf-8").splitlines():
+                m = re.match(r"^([A-Za-z0-9_.-]+):(?!=)", line)
+                if m and not m.group(1).startswith("."):
+                    out.append({"label": "make " + m.group(1), "command": "make " + m.group(1),
+                                "detail": "Makefile", "source": "Makefile"})
+                if len(out) > 60:
+                    break
+        except OSError:
+            pass
+    return out[:60]
+
+
 def tasks_list(root: Path) -> dict:
     f = root / ".ely" / "tasks.json"
     if not f.is_file():
         f = root / "tasks.json"
     if not f.is_file():
-        return {"tasks": []}
+        return {"tasks": _detected_tasks(root), "source": "detected"}
     try:
-        return {"tasks": json.loads(f.read_text(encoding="utf-8")).get("tasks", [])}
+        return {"tasks": json.loads(f.read_text(encoding="utf-8")).get("tasks", []), "source": "file"}
     except (OSError, json.JSONDecodeError):
-        return {"tasks": []}
+        return {"tasks": _detected_tasks(root), "source": "detected"}
 
 
 def tasks_run(root: Path, name: str) -> dict:
@@ -481,4 +508,13 @@ def call(root: Path, op: str, a: dict[str, Any]) -> dict:
         return workspace_save(root, a["name"], a.get("folders", []))
     if op == "workspace_list":
         return workspace_list(root)
+    if op == "term_profiles":
+        from . import termops
+        return termops.profiles(root)
+    if op == "ports":
+        from . import termops
+        return termops.ports(root)
+    if op == "diagnostics":
+        from . import termops
+        return termops.diagnostics(root, a.get("path", ""), a.get("content", ""))
     raise WorkspaceError(400, f"Operación desconocida: {op}")

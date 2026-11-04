@@ -164,7 +164,7 @@
     createProject: (name, template) => request("/workspace/project", { method: "POST", body: { name, template } }),
     searchWorkspace: (q) => request("/workspace/search?q=" + encodeURIComponent(q)),
     uploadWorkspace: (path, content_b64) => request("/workspace/upload", { method: "POST", body: { path, content_b64 } }),
-    terminal: (command, cwd) => request("/terminal/exec", { method: "POST", body: { command, cwd } }),
+    terminal: (command, cwd, profile) => request("/terminal/exec", { method: "POST", body: { command, cwd, profile } }),
     ide: (op, args) => request("/ide/call", { method: "POST", body: { op, args: args || {} } }),
     ideCall: (op, args) => request("/ide/call", { method: "POST", body: { op, args: args || {} } }),
     /* Extensiones: instalación, permisos y proxy de red con permisos. */

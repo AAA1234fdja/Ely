@@ -99,9 +99,12 @@ class IdeAccessibilityWiringTest(unittest.TestCase):
             self.assertIn('registerView("' + provider + '"', self.ide, provider)
 
     def test_terminal_is_a_live_log_with_signals(self):
-        self.assertIn('role: "log"', self.ide)
-        self.assertIn("terminalCommandSucceeded", self.ide)
-        self.assertIn("terminalCommandFailed", self.ide)
+        # La terminal vive en js/terminal.js desde el rediseño del panel.
+        term = read(JS / "terminal.js")
+        self.assertIn('role: "log"', term)
+        self.assertIn("terminalCommandSucceeded", term)
+        self.assertIn("terminalCommandFailed", term)
+        self.assertIn('A11y.registerView("terminal"', self.ide)
 
     def test_modal_traps_focus_and_restores_it(self):
         ui = read(JS / "ui.js")

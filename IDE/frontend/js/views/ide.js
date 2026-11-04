@@ -42,9 +42,10 @@
       sections: { outline: false, timeline: false },
       sort: "name", hidden: false,
       langMode: {},
-      panel: { open: false, tab: "terminal" },
+      panel: { open: false, tab: "terminal", max: false },
+      group: { preview: true, locked: false }, previewPath: null,
       layout: { menubar: true, activity: true, sidebar: true, status: true },
-      wordWrap: false, termCwd: "", history: [], histIdx: 0,
+      wordWrap: false,
       untitledCount: 0, welcome: localStorage.getItem("ely.ideWelcome") !== "0",
       editorHint: localStorage.getItem("ely.ideEditorHint") !== "0"
     });
@@ -824,12 +825,13 @@
       const box = UI.el("div", { class: "vsc-scm" });
       sidebar.appendChild(box);
       let st;
-      try { st = await API.ide("git_status"); } catch (e) { box.appendChild(UI.errBox(e)); return; }
+      try { st = await API.ide("git_status"); if (window.Output) Output.log("Git", "git status · " + ((st.files || []).length) + " cambios"); } catch (e) { box.appendChild(UI.errBox(e)); return; }
       if (!st.git) { box.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ide.scmEmpty") })); return; }
       const msg = UI.el("input", { class: "vsc-search-input", placeholder: T("ide.commitMsg") });
       box.appendChild(msg);
       box.appendChild(UI.el("button", { class: "vsc-side-btn", text: "✓ " + T("ide.commit"), onclick: async () => {
         const r = await API.ide("git_commit", { message: msg.value || "commit" });
+        if (window.Output) Output.log("Git", "git commit -m " + JSON.stringify(msg.value || "commit") + "\n" + (r.output || ""));
         UI.toast(r.ok ? "ok" : "err", T("ide.commit"), (r.output || "").slice(0, 120)); renderSCM();
       } }));
       box.appendChild(UI.el("div", { class: "vsc-scm-branch", text: "⑂ " + st.branch }));
@@ -840,7 +842,7 @@
         const row = UI.el("div", { class: "vsc-tree-item" }, [
           UI.el("span", { class: "vsc-scm-status", text: f.status }),
           UI.el("span", { class: "trunc", text: f.path }),
-          UI.el("button", { class: "icon-btn", text: f.staged ? "−" : "+", title: f.staged ? T("ide.unstage") : T("ide.stage"), onclick: async () => { await API.ide(f.staged ? "git_unstage" : "git_stage", { paths: [f.path] }); renderSCM(); } }),
+          UI.el("button", { class: "icon-btn", text: f.staged ? "−" : "+", title: f.staged ? T("ide.unstage") : T("ide.stage"), onclick: async () => { const op = f.staged ? "git_unstage" : "git_stage"; await API.ide(op, { paths: [f.path] }); if (window.Output) Output.log("Git", op.replace("git_", "git ") + " " + f.path); renderSCM(); } }),
           UI.el("button", { class: "icon-btn", text: "↺", title: T("ide.discard"), onclick: async () => { await API.ide("git_discard", { paths: [f.path] }); renderSCM(); } }),
           UI.el("button", { class: "icon-btn", text: "Δ", title: T("ide.diff"), onclick: async () => { const d = await API.ide("git_diff", { path: f.path }); showDiff(d.diff || "(sin diff)"); } })
         ]);
@@ -886,17 +888,34 @@
       items.forEach((it) => {
         if (it === "-") { m.appendChild(UI.el("div", { class: "vsc-sep" })); return; }
         const b = UI.el("button", {
-          class: "vsc-dropdown-item" + (it.checked ? " checked" : ""),
-          role: "menuitem", "aria-checked": it.checked ? "true" : "false"
+          class: "vsc-dropdown-item" + (it.checked ? " checked" : "") + (it.disabled ? " disabled" : ""),
+          role: "menuitem", "aria-checked": it.checked ? "true" : "false",
+          disabled: it.disabled ? "true" : null,
+          "aria-haspopup": it.submenu ? "menu" : null
         }, [
           UI.el("span", { class: "vsc-check", text: it.checked ? "✓" : "" }),
-          UI.el("span", { text: it.label })
+          UI.el("span", { class: "vsc-menu-label", text: it.label }),
+          it.key ? UI.el("span", { class: "vsc-menu-key", text: it.key }) : null,
+          it.submenu ? UI.el("span", { class: "vsc-menu-arrow", "aria-hidden": "true", text: "›" }) : null
         ]);
-        b.addEventListener("click", () => { m.remove(); it.action(); });
+        if (it.submenu) {
+          const open = () => {
+            const r = b.getBoundingClientRect();
+            ctxMenu(r.right - 4, r.top, it.submenu);
+          };
+          b.addEventListener("click", (e) => { e.stopPropagation(); open(); });
+          b.addEventListener("mouseenter", open);
+        } else {
+          b.addEventListener("click", () => { m.remove(); if (it.action) it.action(); });
+        }
         m.appendChild(b);
       });
       document.body.appendChild(m);
-      setTimeout(() => document.addEventListener("pointerdown", function h(e) { if (!m.contains(e.target)) { m.remove(); document.removeEventListener("pointerdown", h); } }), 0);
+      setTimeout(() => document.addEventListener("pointerdown", function h(e) {
+        if (e.target.closest && e.target.closest(".vsc-ctx")) return;
+        document.querySelectorAll(".vsc-ctx").forEach((n) => n.remove());
+        document.removeEventListener("pointerdown", h);
+      }), 0);
     }
     function explorerOps(path, isDir) {
       return [
@@ -989,7 +1008,8 @@
         ]);
         node.style.paddingLeft = (6 + depth * 12) + "px";
         node.title = full;
-        node.addEventListener("click", () => { state.selected = { path: full, isDir: false }; openFile(full); });
+        node.addEventListener("click", () => { state.selected = { path: full, isDir: false }; openFile(full, false, true); });
+        node.addEventListener("dblclick", () => { state.previewPath = null; renderTabs(); });
         node.addEventListener("contextmenu", (e) => { e.preventDefault(); ctxMenu(e.clientX, e.clientY, explorerOps(full, false)); });
         fileList.appendChild(node);
       });
@@ -1072,7 +1092,7 @@
       }
       state.tabs.forEach((path) => {
         const tab = UI.el("div", {
-          class: "vsc-tab" + (path === state.active ? " on" : "") + (isUntitled(path) ? " untitled" : ""),
+          class: "vsc-tab" + (path === state.active ? " on" : "") + (isUntitled(path) ? " untitled" : "") + (path === state.previewPath ? " preview" : ""),
           title: path, "data-path": path
         }, [
           window.Icons ? (state.langMode[path] ? Icons.language(state.langMode[path], 14) : Icons.file(path, 14)) : null,
@@ -1084,8 +1104,30 @@
           })
         ]);
         tab.addEventListener("click", () => openFile(path));
+        tab.addEventListener("dblclick", () => { state.previewPath = null; renderTabs(); });
         tabsBar.appendChild(tab);
       });
+      /* Acciones del grupo de editores: ▷ ejecutar, ⋯ menú (como VS Code). */
+      tabsBar.appendChild(UI.el("div", { class: "vsc-tabs-spacer" }));
+      if (window.Glyph) {
+        const acts = UI.el("div", { class: "vsc-editor-actions" });
+        const runGroup = UI.el("div", { class: "vsc-tb-group" });
+        runGroup.appendChild(Glyph.button("play", T("ide.run") + " (Ctrl+F5)", () => runActive(), { cls: "vsc-tb-run" }));
+        runGroup.appendChild(Glyph.button("chevronDown", T("editor.runMenu"), (e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          ctxMenu(r.left, r.bottom + 2, [
+            { label: T("editor.runFile"), key: "Ctrl+F5", action: () => runActive() },
+            { label: T("term.runTask"), action: () => { openPanel("terminal"); if (window.Terminal) Terminal.runTask(); } },
+            { label: T("term.configureTasks"), action: () => { if (window.Terminal) Terminal.configureTasks(); } }
+          ]);
+        }, { size: 12, cls: "vsc-tb-caret", haspopup: true }));
+        acts.appendChild(runGroup);
+        acts.appendChild(Glyph.button("ellipsis", T("editor.more"), (e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          ctxMenu(r.left, r.bottom + 2, groupMenuItems());
+        }, { haspopup: true }));
+        tabsBar.appendChild(acts);
+      }
       if (window.A11y) {
         A11y.tablist(tabsBar, {
           selector: ".vsc-tab", label: T("ide.openEditors"),
@@ -1102,6 +1144,50 @@
       renderAll(); if (state.active) openFile(state.active, true);
     }
     function closeActiveTab() { if (state.active) closeTab(state.active); }
+    function closeAllTabs() {
+      const dirty = state.tabs.filter((p) => state.dirty[p]);
+      if (dirty.length) { UI.toast("warn", T("editor.unsavedLeft"), dirty.length + ""); return; }
+      state.tabs = []; state.active = null; state.previewPath = null; renderAll();
+    }
+    function closeSavedTabs() {
+      state.tabs = state.tabs.filter((p) => state.dirty[p]);
+      if (!state.tabs.includes(state.active)) state.active = state.tabs[0] || null;
+      state.previewPath = null;
+      renderAll();
+    }
+    function showOpenedEditors() {
+      quickPick({
+        title: T("editor.showOpened"), placeholder: T("editor.showOpened"),
+        items: state.tabs.map((p) => ({
+          id: p, label: docName(p), description: p,
+          detail: state.dirty[p] ? T("ide.unsaved") : "",
+          icon: window.Icons ? Icons.file(p, 15) : null
+        })),
+        onPick: (it) => openFile(it.id)
+      });
+    }
+    function toggleMaxGroup() {
+      const max = !state.layout.zenGroup;
+      state.layout.zenGroup = max;
+      sidebar.style.display = max ? "none" : (state.layout.sidebar ? "" : "none");
+      activity.style.display = max ? "none" : (state.layout.activity ? "" : "none");
+      if (max) { state.panel.open = false; state.panel.max = false; renderPanel(); }
+      say(max ? T("editor.groupMaximized") : T("editor.groupRestored"));
+    }
+    function groupMenuItems() {
+      return [
+        { label: T("editor.showOpened"), action: showOpenedEditors },
+        "-",
+        { label: T("editor.closeAll"), key: "Ctrl+K W", action: closeAllTabs },
+        { label: T("editor.closeSaved"), key: "Ctrl+K U", action: closeSavedTabs },
+        { label: T("editor.previewEditors"), checked: state.group.preview, action: () => { state.group.preview = !state.group.preview; if (!state.group.preview) state.previewPath = null; renderTabs(); } },
+        "-",
+        { label: T("editor.maximizeGroup"), key: "Ctrl+K Ctrl+M", checked: !!state.layout.zenGroup, action: toggleMaxGroup },
+        { label: T("editor.lockGroup"), checked: state.group.locked, action: () => { state.group.locked = !state.group.locked; say(state.group.locked ? T("editor.locked") : T("editor.unlocked")); } },
+        "-",
+        { label: T("editor.configure"), action: () => App.navigate("config") }
+      ];
+    }
 
     function renderBreadcrumb() {
       UI.clear(breadcrumb);
@@ -1150,6 +1236,7 @@
       codeTA.addEventListener("input", () => {
         if (!state.active) return;
         state.dirty[state.active] = true;
+        state.previewPath = null;
         paint(); updateStatus(); renderTabs();
         if (window.ExtHost) {
           clearTimeout(state.extChangeTimer);
@@ -1319,12 +1406,74 @@
 
     /* ---------------------------------------------------------- panel inferior */
     const PANEL_TABS = [["problems", T("ide.problems")], ["output", T("ide.output")], ["debug", T("ide.debugConsole")], ["terminal", T("ide.terminal")], ["ports", T("ide.ports")]];
-    let termOut = null, termInput = null;
+    let panelActions = null;
+
+    /* Puentes entre el panel y los módulos de terminal/salida. */
+    function panelHooks() {
+      return {
+        menu: ctxMenu, pick: quickPick,
+        refreshToolbar: () => { if (panelActions) fillPanelActions(panelActions); },
+        settings: () => { App.navigate("config"); },
+        openFile: (path) => openFile(path)
+      };
+    }
+    function tbMax() {
+      return Glyph.button(state.panel.max ? "restore" : "maximize",
+        state.panel.max ? T("panel.restore") : T("panel.maximize"),
+        () => { state.panel.max = !state.panel.max; renderPanel(); say(state.panel.max ? T("panel.maximized") : T("panel.restored")); },
+        { pressed: state.panel.max });
+    }
+    function fillPanelActions(box) {
+      UI.clear(box);
+      const add = (nodes) => (nodes || []).forEach((n) => n && box.appendChild(n));
+      if (state.panel.tab === "terminal" && window.Terminal) add(Terminal.toolbar());
+      else if (state.panel.tab === "output" && window.Output) add(Output.toolbar());
+      else if (state.panel.tab === "problems") {
+        const f = UI.el("input", { class: "vsc-out-filter", type: "search", placeholder: T("prob.filterPlaceholder"), "aria-label": T("prob.filter"), value: state.probFilter || "" });
+        f.addEventListener("input", () => { state.probFilter = f.value; renderProblemsBody(); });
+        box.appendChild(f);
+        box.appendChild(UI.el("span", { class: "vsc-prob-counts", id: "vsc-prob-counts" }));
+        if (window.Glyph) {
+          box.appendChild(Glyph.button("refresh", T("prob.refresh"), () => renderProblemsBody()));
+          box.appendChild(Glyph.button("ellipsis", T("prob.more"), (e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            ctxMenu(r.left, r.bottom + 2, [
+              { label: T("prob.errors"), checked: state.probErrors !== false, action: () => { state.probErrors = state.probErrors === false; renderProblemsBody(); } },
+              { label: T("prob.warnings"), checked: state.probWarnings !== false, action: () => { state.probWarnings = state.probWarnings === false; renderProblemsBody(); } },
+              "-",
+              { label: T("prob.copy"), action: () => { const txt = (state.problems || []).map((x) => x.path + ":" + x.line + " " + x.message).join("\n"); if (navigator.clipboard) navigator.clipboard.writeText(txt); } }
+            ]);
+          }, { haspopup: true }));
+        }
+      } else if (state.panel.tab === "ports" && window.Glyph) {
+        box.appendChild(Glyph.button("plus", T("ports.add"), () => addPortForward()));
+        box.appendChild(Glyph.button("refresh", T("ports.refresh"), () => renderPortsBody()));
+      } else if (state.panel.tab === "debug" && window.Glyph) {
+        box.appendChild(Glyph.button("play", T("ide.run"), () => runActive()));
+        box.appendChild(Glyph.button("clear", T("out.clear"), () => { if (window.Output) Output.clear(); }));
+      }
+      if (window.Glyph) {
+        box.appendChild(tbMax());
+        box.appendChild(Glyph.button("close", T("panel.hide"), () => { state.panel.open = false; state.panel.max = false; renderPanel(); }));
+      } else {
+        box.appendChild(UI.el("button", { class: "vsc-panel-x", text: "×", title: T("common.close"), onclick: () => { state.panel.open = false; renderPanel(); } }));
+      }
+    }
+
     function renderPanel() {
       UI.clear(panel);
       panel.style.display = state.panel.open ? "" : "none";
-      if (!state.panel.open) return;
+      panel.classList.toggle("max", !!(state.panel.open && state.panel.max));
+      editorPane.style.display = state.panel.open && state.panel.max ? "none" : "";
+      if (!state.panel.open) {
+        if (window.Terminal) Terminal.unmount();
+        if (window.Output) Output.unmount();
+        return;
+      }
+      if (window.Terminal) Terminal.init(panelHooks());
+      if (window.Output) Output.init(panelHooks());
       const tabs = UI.el("div", { class: "vsc-panel-tabs" });
+      const tablist = UI.el("div", { class: "vsc-panel-tablist", role: "tablist", "aria-label": T("ide.panel") });
       PANEL_TABS.forEach(([id, label]) => {
         const b = UI.el("button", {
           class: "vsc-panel-tab" + (state.panel.tab === id ? " on" : ""), text: label,
@@ -1332,67 +1481,157 @@
           "aria-controls": "vsc-panel-body"
         });
         b.addEventListener("click", () => { state.panel.tab = id; renderPanel(); say(label); });
-        tabs.appendChild(b);
+        tablist.appendChild(b);
       });
-      tabs.appendChild(UI.el("div", { style: { flex: "1" } }));
-      tabs.appendChild(UI.el("button", { class: "vsc-panel-x", text: "×", title: T("common.close"), "aria-label": T("common.close"), onclick: () => { state.panel.open = false; renderPanel(); } }));
+      tabs.appendChild(tablist);
+      panelActions = UI.el("div", { class: "vsc-panel-actions" });
+      tabs.appendChild(panelActions);
+      fillPanelActions(panelActions);
       panel.appendChild(tabs);
       const pbody = UI.el("div", { class: "vsc-panel-body", id: "vsc-panel-body", role: "tabpanel", "aria-label": (PANEL_TABS.find((p) => p[0] === state.panel.tab) || ["", ""])[1] });
       panel.appendChild(pbody);
       panel.setAttribute("role", "region");
       panel.setAttribute("aria-label", T("ide.panel"));
       if (window.A11y) {
-        A11y.tablist(tabs, {
+        A11y.tablist(tablist, {
           selector: ".vsc-panel-tab", label: T("ide.panel"),
           onSelect: (node) => { state.panel.tab = node.dataset.tab; renderPanel(); },
           selected: (node) => node.dataset.tab === state.panel.tab
         });
       }
-      if (state.panel.tab === "terminal") renderTerminal(pbody);
+      if (state.panel.tab === "terminal" && window.Terminal) Terminal.mount(pbody);
+      else if (state.panel.tab === "output" && window.Output) Output.mount(pbody);
+      else if (state.panel.tab === "problems") renderProblems(pbody);
+      else if (state.panel.tab === "ports") renderPorts(pbody);
+      else if (state.panel.tab === "debug") renderDebugConsole(pbody);
       else pbody.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ide.panelEmpty") }));
     }
-    function openPanel(tab) { state.panel.open = true; state.panel.tab = tab || state.panel.tab; renderPanel(); if (tab === "terminal" && termInput) termInput.focus(); }
-    function togglePanel(tab) { if (state.panel.open && (!tab || state.panel.tab === tab)) state.panel.open = false; else { state.panel.open = true; if (tab) state.panel.tab = tab; } renderPanel(); if (state.panel.open && state.panel.tab === "terminal" && termInput) termInput.focus(); }
-
-    function renderTerminal(pbody) {
-      termOut = UI.el("div", {
-        class: "vsc-term-out", role: "log", "aria-live": "polite",
-        "aria-label": T("ide.terminalOutput"), tabindex: "0"
-      });
-      termOut.appendChild(UI.el("div", { class: "vsc-term-line muted", text: "Ely terminal · " + T("ide.termHint") }));
-      const line = UI.el("div", { class: "vsc-term-line" });
-      const prompt = UI.el("span", { class: "vsc-term-prompt", text: promptText() });
-      termInput = UI.el("input", { class: "vsc-term-input", spellcheck: "false" });
-      line.appendChild(prompt); line.appendChild(termInput);
-      pbody.appendChild(termOut); pbody.appendChild(line);
-      termInput.addEventListener("keydown", async (e) => {
-        if (e.key === "Enter") {
-          const cmd = termInput.value; termInput.value = "";
-          state.history.push(cmd); state.histIdx = state.history.length;
-          await runTerm(cmd, prompt);
-        } else if (e.key === "ArrowUp") { e.preventDefault(); if (state.histIdx > 0) termInput.value = state.history[--state.histIdx] || ""; }
-        else if (e.key === "ArrowDown") { e.preventDefault(); if (state.histIdx < state.history.length) termInput.value = state.history[++state.histIdx] || ""; }
-      });
-      pbody.addEventListener("click", () => termInput.focus());
-      setTimeout(() => termInput.focus(), 30);
+    function openPanel(tab) {
+      state.panel.open = true; state.panel.tab = tab || state.panel.tab;
+      renderPanel();
+      if (state.panel.tab === "terminal" && window.Terminal) setTimeout(() => Terminal.focus(), 60);
     }
-    function promptText() { return (state.termCwd ? state.termCwd : "workspace") + " $"; }
-    async function runTerm(cmd, promptEl) {
-      termOut.appendChild(UI.el("div", { class: "vsc-term-line" }, [UI.el("span", { class: "vsc-term-prompt", text: promptEl.textContent }), UI.el("span", { text: " " + cmd })]));
-      if (cmd.trim() === "clear") { UI.clear(termOut); return; }
-      try {
-        const r = await API.terminal(cmd, state.termCwd);
-        state.termCwd = r.cwd || "";
-        if (r.stdout) termOut.appendChild(UI.el("pre", { class: "vsc-term-pre", text: r.stdout }));
-        if (r.stderr) termOut.appendChild(UI.el("pre", { class: "vsc-term-pre err", text: r.stderr }));
-        const failed = r.exit_code != null && r.exit_code !== 0;
-        sig(failed ? "terminalCommandFailed" : "terminalCommandSucceeded", cmd);
-      } catch (e) {
-        termOut.appendChild(UI.el("pre", { class: "vsc-term-pre err", text: e.message }));
-        sig("terminalCommandFailed", e.message);
+    function togglePanel(tab) {
+      if (state.panel.open && (!tab || state.panel.tab === tab)) { state.panel.open = false; state.panel.max = false; }
+      else { state.panel.open = true; if (tab) state.panel.tab = tab; }
+      renderPanel();
+      if (state.panel.open && state.panel.tab === "terminal" && window.Terminal) setTimeout(() => Terminal.focus(), 60);
+    }
+
+    /* ---------------------------------------------------------- problemas */
+    let probBody = null;
+    function renderProblems(pbody) {
+      probBody = UI.el("div", { class: "vsc-prob-wrap" });
+      pbody.appendChild(probBody);
+      renderProblemsBody();
+    }
+    async function renderProblemsBody() {
+      if (!probBody) return;
+      const paths = state.tabs.filter((p) => !isUntitled(p)).slice(0, 10);
+      const rows = [];
+      for (const path of paths) {
+        try {
+          const doc = state.docs[path];
+          const r = await API.ide("diagnostics", { path, content: doc ? doc.content : "" });
+          (r.problems || []).forEach((x) => rows.push(x));
+        } catch (e) { /* archivo no legible: sin problemas que mostrar */ }
       }
-      if (promptEl) promptEl.textContent = promptText();
-      termOut.scrollTop = termOut.scrollHeight;
+      state.problems = rows;
+      const errs = rows.filter((r) => r.severity === "error").length;
+      const warns = rows.length - errs;
+      const counts = document.getElementById("vsc-prob-counts");
+      if (counts) {
+        UI.clear(counts);
+        counts.appendChild(UI.el("span", { class: "vsc-prob-badge err", text: "⊗ " + errs }));
+        counts.appendChild(UI.el("span", { class: "vsc-prob-badge warn", text: "⚠ " + warns }));
+      }
+      updateStatus();
+      UI.clear(probBody);
+      const q = (state.probFilter || "").toLowerCase();
+      const shown = rows.filter((r) =>
+        (r.severity === "error" ? state.probErrors !== false : state.probWarnings !== false) &&
+        (!q || (r.message + " " + r.path).toLowerCase().includes(q)));
+      if (!shown.length) {
+        probBody.appendChild(UI.el("div", { class: "vsc-side-empty", text: paths.length ? T("prob.none") : T("prob.noFiles") }));
+        return;
+      }
+      shown.forEach((r) => {
+        const row = UI.el("div", { class: "vsc-prob-row", role: "button", tabindex: "0" }, [
+          UI.el("span", { class: "vsc-prob-sev " + r.severity, "aria-hidden": "true", text: r.severity === "error" ? "⊗" : "⚠" }),
+          UI.el("span", { class: "vsc-prob-msg", text: r.message }),
+          UI.el("span", { class: "vsc-prob-src", text: r.source || "" }),
+          UI.el("span", { class: "vsc-prob-loc", text: docName(r.path) + " [" + r.line + ", " + r.col + "]" })
+        ]);
+        const go = () => { openFile(r.path).then(() => gotoLine(r.line)); };
+        row.addEventListener("click", go);
+        row.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+        probBody.appendChild(row);
+      });
+    }
+
+    /* ---------------------------------------------------------- puertos */
+    let portsBody = null;
+    function renderPorts(pbody) {
+      portsBody = UI.el("div", { class: "vsc-ports-wrap" });
+      pbody.appendChild(portsBody);
+      renderPortsBody();
+    }
+    function previewUrl(port) {
+      /* En la vista previa de Arena el host es <puerto>-<sandbox>.e2b.app. */
+      const m = /^(\d+)-(.+)$/.exec(location.hostname);
+      if (m) return location.protocol + "//" + port + "-" + m[2];
+      return "http://localhost:" + port;
+    }
+    async function renderPortsBody() {
+      if (!portsBody) return;
+      UI.clear(portsBody);
+      let data = { ports: [], supported: false };
+      try { data = await API.ide("ports", {}); } catch (e) { /* sin /proc */ }
+      if (!data.supported) {
+        portsBody.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ports.unsupported") }));
+      }
+      const head = UI.el("div", { class: "vsc-ports-row head" }, [
+        UI.el("span", { text: T("ports.port") }), UI.el("span", { text: T("ports.process") }),
+        UI.el("span", { text: "PID" }), UI.el("span", { text: T("ports.address") }),
+        UI.el("span", { text: T("ports.state") })
+      ]);
+      portsBody.appendChild(head);
+      if (!(data.ports || []).length) {
+        portsBody.appendChild(UI.el("div", { class: "vsc-side-empty", text: T("ports.none") }));
+        return;
+      }
+      data.ports.forEach((p) => {
+        const url = previewUrl(p.port);
+        const row = UI.el("div", { class: "vsc-ports-row" }, [
+          UI.el("a", { class: "vsc-ports-link", href: url, target: "_blank", rel: "noopener", text: String(p.port) }),
+          UI.el("span", { text: p.process || "—" }),
+          UI.el("span", { text: p.pid == null ? "—" : String(p.pid) }),
+          UI.el("span", { class: "trunc", text: url }),
+          UI.el("span", { class: "vsc-ports-state", text: T("ports.listening") })
+        ]);
+        portsBody.appendChild(row);
+      });
+    }
+    function addPortForward() {
+      quickPick({
+        title: T("ports.add"), placeholder: T("ports.addHint"),
+        items: [{ id: "port", label: "8080", detail: T("ports.addHint") }],
+        onInput: (q, item) => { item.label = q || "8080"; },
+        onPick: (item) => {
+          const port = parseInt(item.label, 10);
+          if (!port || port < 1 || port > 65535) { UI.toast("err", T("ports.invalid")); return; }
+          window.open(previewUrl(port), "_blank", "noopener");
+        }
+      });
+    }
+
+    /* ---------------------------------------------------------- consola de depuración */
+    function renderDebugConsole(pbody) {
+      const box = UI.el("div", { class: "vsc-debug-empty" }, [
+        UI.el("div", { text: T("debug.none") }),
+        UI.el("button", { class: "vsc-btn-primary", text: T("ide.run"), onclick: () => runActive() })
+      ]);
+      pbody.appendChild(box);
     }
 
     /* ---------------------------------------------------------- estado / layout */
@@ -1452,8 +1691,16 @@
     function toggleWrap() { state.wordWrap = !state.wordWrap; renderEditor(); }
 
     /* ---------------------------------------------------------- abrir/guardar */
-    async function openFile(path, force) {
+    async function openFile(path, force, preview) {
       if (!path) return;
+      /* Pestaña en vista previa: un solo clic la reemplaza, editar la fija. */
+      if (preview && state.group.preview && !state.group.locked && !isUntitled(path)) {
+        const old = state.previewPath;
+        if (old && old !== path && !state.dirty[old]) state.tabs = state.tabs.filter((p) => p !== old);
+        state.previewPath = path;
+      } else if (!preview) {
+        state.previewPath = null;
+      }
       if (isUntitled(path)) {
         state.active = path;
         if (!state.tabs.includes(path)) state.tabs = [path, ...state.tabs].slice(0, 12);
@@ -1463,7 +1710,6 @@
       const ext = (path.split(".").pop() || "").toLowerCase();
       state.active = path;
       if (!state.tabs.includes(path)) state.tabs = [path, ...state.tabs].slice(0, 10);
-      state.histIdx = state.history.length;
       renderTabs(); renderBreadcrumb();
       if (PREVIEW.includes(ext)) { renderEditor(); updateStatus(); return; }
       if (state.docs[path]) { renderEditor(); updateStatus(); return; }
@@ -1830,13 +2076,13 @@
     }
 
     function closeProject() { state.opened = false; state.projectRoot = null; state.tabs = []; state.docs = {}; state.active = null; state.tree = null; renderAll(); }
-    function runActive() {
+    async function runActive() {
       if (!state.active) { UI.toast("warn", T("ide.openFirst")); return; }
-      const ext = (state.active.split(".").pop() || "").toLowerCase();
-      const cmd = ext === "py" ? "python3 " + state.active : (ext === "js" ? "node " + state.active : null);
+      if (state.dirty[state.active]) await save();
       openPanel("terminal");
-      if (!cmd) { UI.toast("warn", T("ide.runSoon")); return; }
-      setTimeout(() => runTerm(cmd, { textContent: promptText() }), 60);
+      if (!window.Terminal) { UI.toast("warn", T("ide.runSoon")); return; }
+      await Terminal.init(panelHooks());
+      setTimeout(() => Terminal.runFile(state.active), 80);
     }
 
     function renderAll() { renderTabs(); renderBreadcrumb(); renderEditor(); updateStatus(); renderSidebar(); renderPanel(); }
@@ -1901,8 +2147,8 @@
       });
       A11y.registerView("terminal", {
         label: T("ide.terminalOutput"),
-        available: () => !!(termOut && termOut.textContent.trim()),
-        get: () => ({ title: T("ide.terminalOutput"), text: termOut.textContent })
+        available: () => !!(window.Terminal && Terminal.text().trim()),
+        get: () => ({ title: T("ide.terminalOutput") + " · " + Terminal.activeName(), text: Terminal.text() })
       });
       A11y.registerView("explorer", {
         label: T("ide.explorer"),
@@ -1920,11 +2166,25 @@
     buildMenus();
     renderAll();
     loadRepos();
+    /* «Nueva ventana de terminal» abre el IDE con el panel maximizado. */
+    if (/[?&]terminal=1/.test(location.search)) {
+      state.panel.open = true; state.panel.tab = "terminal"; state.panel.max = true;
+      renderPanel();
+      if (window.Terminal) Terminal.init(panelHooks()).then(() => { if (!Terminal.count()) Terminal.create(); });
+    }
     document.addEventListener("keydown", function shortcuts(e) {
       if (App.route !== "ide") return;
       const mod = e.ctrlKey || e.metaKey;
       const k = e.key.toLowerCase();
+      if (mod && e.shiftKey && (k === "ñ" || k === "Ñ")) {
+        e.preventDefault();
+        openPanel("terminal");
+        if (window.Terminal) { Terminal.init(panelHooks()).then(() => e.altKey ? Terminal.newWindow() : Terminal.create()); }
+        return;
+      }
+      if (mod && e.shiftKey && (k === "5" || e.key === "%")) { e.preventDefault(); openPanel("terminal"); if (window.Terminal) Terminal.init(panelHooks()).then(() => Terminal.split()); return; }
       if (mod && (k === "j" || e.key === "ñ" || e.key === "Ñ")) { e.preventDefault(); togglePanel("terminal"); return; }
+      if (mod && k === "f5") { e.preventDefault(); runActive(); return; }
       if (mod && k === "s") { e.preventDefault(); save(); return; }
       if (mod && k === "p" && !e.shiftKey) { e.preventDefault(); quickOpen(); return; }
       if (mod && e.shiftKey && k === "p") { e.preventDefault(); commandPalette(); return; }
@@ -1940,8 +2200,11 @@
         e.preventDefault();
         const once = (ev2) => {
           document.removeEventListener("keydown", once, true);
-          if (ev2.key.toLowerCase() === "m") { ev2.preventDefault(); selectLanguage(); }
+          if (ev2.key.toLowerCase() === "m" && !ev2.ctrlKey) { ev2.preventDefault(); selectLanguage(); }
+          if (ev2.key.toLowerCase() === "m" && ev2.ctrlKey) { ev2.preventDefault(); toggleMaxGroup(); }
           if (ev2.key.toLowerCase() === "o") { ev2.preventDefault(); openFolderFromComputer(); }
+          if (ev2.key.toLowerCase() === "w") { ev2.preventDefault(); closeAllTabs(); }
+          if (ev2.key.toLowerCase() === "u") { ev2.preventDefault(); closeSavedTabs(); }
         };
         document.addEventListener("keydown", once, true);
         setTimeout(() => document.removeEventListener("keydown", once, true), 1600);

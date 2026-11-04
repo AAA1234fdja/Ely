@@ -169,9 +169,11 @@ def upload(root: Path, rel: str, data: bytes) -> dict[str, Any]:
     return {"path": rel, "size": len(data), "saved": True}
 
 
-def run_command(root: Path, command: str, cwd: str = "") -> dict[str, Any]:
-    """Ejecuta un comando de shell en el workspace (terminal del IDE)."""
+def run_command(root: Path, command: str, cwd: str = "", profile: str = "") -> dict[str, Any]:
+    """Ejecuta una línea con el intérprete del perfil elegido (terminal del IDE)."""
     import subprocess
+
+    from . import termops
     base = _safe(root, cwd) if cwd else root.resolve()
     if not base.is_dir():
         base = root.resolve()
@@ -183,14 +185,18 @@ def run_command(root: Path, command: str, cwd: str = "") -> dict[str, Any]:
         target = cmd[2:].strip().strip('"').strip("'")
         new = root if not target or target == "~" else (base / target).resolve()
         if new != root and root not in new.parents:
-            return {"stdout": "", "stderr": "cd: fuera del workspace", "code": 1, "cwd": cwd}
+            return {"stdout": "", "stderr": "cd: fuera del workspace", "code": 1, "cwd": cwd, "profile": profile}
         rel = "" if new == root else str(new.relative_to(root))
         return {"stdout": "", "stderr": "", "code": 0, "cwd": rel}
     try:
-        proc = subprocess.run(cmd, shell=True, cwd=str(base), capture_output=True,
+        argv = termops.argv_for(profile, cmd)
+    except WorkspaceError as exc:
+        return {"stdout": "", "stderr": str(exc), "code": 1, "cwd": cwd, "profile": profile}
+    try:
+        proc = subprocess.run(argv, cwd=str(base), capture_output=True,
                               text=True, timeout=20)
         return {"stdout": proc.stdout[-20000:], "stderr": proc.stderr[-20000:],
-                "code": proc.returncode, "cwd": cwd}
+                "code": proc.returncode, "cwd": cwd, "profile": profile}
     except subprocess.TimeoutExpired:
         return {"stdout": "", "stderr": "tiempo de espera agotado (20 s)", "code": 124, "cwd": cwd}
     except OSError as exc:

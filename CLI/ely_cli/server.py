@@ -506,7 +506,8 @@ class ElyHandler(BaseHTTPRequestHandler):
         if method == "POST" and route == "/terminal/exec":
             body = self.read_json()
             return self.json(engine.run_command(
-                str(body.get("command") or ""), str(body.get("cwd") or "")
+                str(body.get("command") or ""), str(body.get("cwd") or ""),
+                str(body.get("profile") or "")
             ))
 
         if method == "GET" and route == "/assets":

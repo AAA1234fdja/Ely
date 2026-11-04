@@ -396,6 +396,11 @@
       if (window.A11y) A11y.init(this);
       /* Autocompletado con Tab (activado por defecto) y host de extensiones. */
       await loadScript("js/completion.js");
+      /* Panel inferior estilo VS Code: glifos, canales de salida y terminal. */
+      await loadScript("js/glyphs.js");
+      await loadScript("js/output.js");
+      await loadScript("js/terminal.js");
+      if (window.Output) Output.init({});
       await loadScript("js/ext-host.js");
       if (window.ExtHost) ExtHost.init();
 

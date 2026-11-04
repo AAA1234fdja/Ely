@@ -182,20 +182,22 @@ documentación y los atajos sean familiares.
 | 3 | **Extensiones + comunicación externa**: backend (`extensions.py` 770), host en sandbox (`ext-host.js` 470), autocompletado con Tab (`completion.js` 574), vista Extensiones (227), 3 extensiones incluidas, CLI `ely extensions` | **≈ 2.900** | ✅ |
 | 4 | **Lenguajes + Explorador VS Code**: catálogo de 165 lenguajes (267), resaltado por familias (209), Explorer con carpeta raíz y 4 acciones, creación en línea, Outline y Timeline | **≈ 730** | ✅ |
 | 4b | **Más lenguajes + assets**: 261 lenguajes (+105), 93 familias (+26), `icons.js` reescrito (265), galería `/icons.html` (143) y **345 SVG** | **≈ 480** | ✅ |
-| — | **Consumido** | **≈ 8.030 / 10.000** | margen ≈ 1.970 |
+| 4c | **Panel inferior + terminal VS Code**: `terminal.js` (525), `output.js` (159), `glyphs.js` (92), `termops.py` (191), panel y barra del editor en `ide.js` (+329), estilos (+91), i18n (+88), tareas deducidas (+39) | **≈ 1.540** | ✅ |
+| — | **Consumido** | **≈ 9.570 / 10.000** | margen ≈ 430 |
 | 5 | Editor: plegado de código, bracket matching, sticky scroll, minimapa | ~1.000 | propuesto |
 | 6 | Workbench: editor de atajos, modo Zen, Emmet, preview Markdown, multi-diff | ~900 | propuesto |
 
-### Verificación de las fases 2, 3, 4 y 4b (no solo «está escrito»)
+### Verificación de las fases 2, 3, 4, 4b y 4c (no solo «está escrito»)
 
 | Prueba | Resultado |
 |---|---|
-| `python3 -m unittest discover -s CLI/tests` | **203/203 OK** (93 previos + 68 de extensiones + 42 de lenguajes e iconos) |
+| `python3 -m unittest discover -s CLI/tests` | **258/258 OK** (203 previos + 55 de terminal, perfiles, puertos, diagnóstico y tareas) |
 | Harness jsdom del chat contra el backend real | **36/36 OK** |
-| Harness jsdom del IDE + accesibilidad | **65/65 OK** |
 | Harness jsdom de **extensiones + Tab** | **100/100 OK** |
 | Harness jsdom de **Explorador + lenguajes + iconos** | **78/78 OK** |
 | Harness jsdom de la **galería de assets** (`/icons.html`) | **19/19 OK** |
+| Harness jsdom del **panel + terminal** | **93/93 OK** |
+| Harness jsdom del IDE + accesibilidad | **67/67 OK** (antes 65: +2 del panel) |
 | Assets servidos por `ely serve` | **0 errores 404** en el muestreo (33 del IDE + 32 de la galería) |
 | Auditoría de idioma recorriendo **20 rutas** con `language=en` | **0 textos en español sin traducir** (antes: 117) |
 | Ida y vuelta de idioma ES→EN→ES | **40/40 OK** |
@@ -264,6 +266,35 @@ palabras clave → palabras del archivo. Respeta el modo *Tab mueve el foco*
   son decorativos (`alt=""`, `aria-hidden`), perezosos y con *fallback*.
 - **Galería `/icons.html`** para ver y buscar los 345 assets por lenguaje,
   extensión o carpeta, en ES · EN, con la atribución del pack.
+
+### Fase 4c · Panel inferior y terminal como VS Code
+
+- **Panel** con las cinco pestañas de VS Code y una **barra de acciones distinta
+  por pestaña**: en Terminal, perfil + «+» con menú, dividir, papelera, ⋯,
+  maximizar y cerrar; en Salida, filtro + selector de canal + limpiar + bloqueo.
+- **Terminal real**: varias terminales con lista lateral numerada, split en
+  paneles, perfiles detectados en el servidor (`bash`, `zsh`, `sh`, `fish`,
+  `pwsh`, `python`, `node`) y prompt con el estilo de cada intérprete. Cada línea
+  se ejecuta con el intérprete del perfil (`POST /api/terminal/exec` + `profile`),
+  con cwd por panel, historial ↑/↓ y decoración de estado del comando.
+  No es una PTY: los programas interactivos (vim, top, ssh) no funcionan.
+- **Menú «+»** con los mismos items que VS Code, atajos a la derecha y submenú
+  «Dividir terminal con perfil». «Nueva ventana de terminal» abre el IDE con el
+  panel maximizado (`?terminal=1`).
+- **Salida** con canales alimentados de verdad: Terminal (comandos), Tasks
+  (tareas), Extension Host (`ely.log`), Git (status/stage/commit), Ely y Window
+  (errores del navegador). Filtro con `texto`, `!excluir` y `"frase exacta"`.
+- **Problemas**: validación real de sintaxis del búfer abierto (Python con `ast`,
+  JSON con `json`), contadores y salto a la línea. **Puertos**: los que están en
+  escucha según `/proc/net/tcp`, con proceso y PID, enlazando al host de la vista
+  previa (`<puerto>-<sandbox>.e2b.app`) en lugar de `localhost`.
+- **Tareas**: `.ely/tasks.json` o, si no existe, deducidas de los scripts de
+  `package.json` y de los objetivos del `Makefile`.
+- **Editor**: botón ▷ Ejecutar (lanza el archivo en la terminal con el
+  intérprete que le toca) y menú ⋯ del grupo con las siete acciones de VS Code,
+  incluidas las **pestañas en vista previa** en cursiva.
+- Pendiente y dicho claramente: **dividir el editor en grupos** y una **PTY**
+  interactiva. El presupuesto de 10.000 líneas queda prácticamente consumido.
 
 La auditoría de idioma es un recorrido real: carga la app servida por `ely serve`
 en un DOM, cambia el idioma y visita las 18 rutas del nav más el chat, revisando
