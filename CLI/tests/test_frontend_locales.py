@@ -32,6 +32,14 @@ PACK_IDS = [i for i in CANON if i not in ("es", "en")]
 TOP_KEY = re.compile(r'^    "([A-Za-z0-9_.]+)": (".*"),?$', re.M)
 ANY_KEY = re.compile(r'^    "([A-Za-z0-9_.]+)":', re.M)
 
+# Rótulos de modificador propios del teclado de cada idioma (como VS Code).
+# Se normalizan a la forma inglesa antes de comparar literales técnicos.
+KEY_ALIASES = {
+    "de": {r"\bStrg\b": "Ctrl", r"\bUmschalt\b": "Shift", r"\bEsc\b": "Escape"},
+    "fr": {r"\bMaj\b": "Shift", r"\bÉchap\b": "Escape", r"\bEntrée\b": "Enter"},
+    "it": {r"\bInvio\b": "Enter", r"\bEsc\b": "Escape"},
+}
+
 
 def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
@@ -183,6 +191,76 @@ class LocalePackTest(unittest.TestCase):
                 got = sorted(set(re.findall(r"\$\d", entries[key])))
                 self.assertEqual(got, want, f"{lang}/{key}: {entries[key]!r}")
 
+    def test_brace_placeholders_survive_translation(self):
+        """`{n}` y compañía se sustituyen en tiempo de ejecución: no se traducen."""
+        for lang in PACK_IDS:
+            entries = pack_entries(lang)
+            for key, pair in self.base.items():
+                want = sorted(re.findall(r"\{[a-zA-Z0-9_]+\}", pair[1]))
+                if not want:
+                    continue
+                got = sorted(re.findall(r"\{[a-zA-Z0-9_]+\}", entries[key]))
+                self.assertEqual(got, want, f"{lang}/{key}: {entries[key]!r}")
+
+    def test_inline_html_survives_translation(self):
+        """Unas pocas cadenas llevan marcado (<b>, <br>): debe conservarse."""
+        for lang in PACK_IDS:
+            entries = pack_entries(lang)
+            for key, pair in self.base.items():
+                want = sorted(re.findall(r"</?[a-zA-Z][a-zA-Z0-9]*\s*/?>", pair[1]))
+                if not want:
+                    continue
+                got = sorted(re.findall(r"</?[a-zA-Z][a-zA-Z0-9]*\s*/?>", entries[key]))
+                self.assertEqual(got, want, f"{lang}/{key}: {entries[key]!r}")
+
+    def test_technical_literals_are_not_translated(self):
+        """Nombres de archivo, atajos y sintaxis de manifiesto van tal cual.
+
+        Excepción deliberada: alemán, francés e italiano rotulan los
+        modificadores como en su teclado físico (Strg/Umschalt, Maj/Échap,
+        Invio), igual que VS Code en esos idiomas. Se normalizan antes de
+        comparar para seguir comprobando la tecla.
+        """
+        literals = [
+            "Untitled-1", ".ely/tasks.json", "ely-extension.json", "main.js",
+            "activate(ely)", "network:<host>", "owner/repo", "npm:", "aria-live",
+            "Ctrl+K M", "Ctrl+M", "Alt+F1", "Alt+F2", "Ctrl+J", "Ctrl+Ñ",
+            "Ctrl+P", "Ctrl+Shift+P", "Escape", "planeado/",
+        ]
+        for lang in PACK_IDS:
+            entries = pack_entries(lang)
+            for key, pair in self.base.items():
+                value = entries[key]
+                for src, dst in KEY_ALIASES.get(lang, {}).items():
+                    value = re.sub(src, dst, value)
+                for lit in literals:
+                    if lit in pair[1]:
+                        self.assertIn(lit, value, f"{lang}/{key} pierde {lit!r}")
+
+    def test_numbers_survive_translation(self):
+        """Las cifras no se traducen; la unidad sí puede (zh «32 像素»)."""
+        for lang in PACK_IDS:
+            entries = pack_entries(lang)
+            for key, pair in self.base.items():
+                want = set(re.findall(r"\d+", pair[1]))
+                if not want:
+                    continue
+                got = set(re.findall(r"\d+", entries[key]))
+                self.assertTrue(want <= got, f"{lang}/{key} pierde {want - got}: {entries[key]!r}")
+
+    def test_localised_modifier_labels_match_the_keyboard(self):
+        """Sólo de/fr/it traducen los modificadores; el resto los deja en inglés."""
+        de, fr, it = pack_entries("de"), pack_entries("fr"), pack_entries("it")
+        self.assertIn("Strg+P", de["ide.walkB1d"])
+        self.assertIn("Strg+Umschalt+P", de["ide.walkB2d"])
+        self.assertIn("Ctrl+Maj+P", fr["ide.walkB2d"])
+        self.assertIn("Échap", fr["a11y.viewHint"])
+        self.assertNotIn("Ctrl+", read(LOCALES / "de.js"))
+        for lang in PACK_IDS:
+            if lang in KEY_ALIASES:
+                continue
+            self.assertIn("Ctrl+Shift+P", pack_entries(lang)["ide.walkB2d"], lang)
+
     def test_no_duplicate_keys(self):
         for lang in PACK_IDS:
             keys = ANY_KEY.findall(read(LOCALES / f"{lang}.js"))
@@ -196,10 +274,22 @@ class LocalePackTest(unittest.TestCase):
                 self.assertTrue(value.strip(), f"{lang}/{key} vacío")
                 self.assertTrue(key in self.base, f"{lang}/{key} no existe en D")
 
-    def test_coverage_is_the_same_core_for_every_language(self):
+    def test_each_pack_translates_the_whole_dictionary(self):
+        """Cobertura 100 %: ningún idioma puede quedarse en el núcleo.
+
+        `I18N.coverage()` se muestra en Ajustes, así que un paquete parcial
+        sería visible para el usuario como una regresión. Se exige la clave
+        presente (no la igualdad con el texto ES: hay cognados legítimos).
+        """
+        for lang in PACK_IDS:
+            entries = pack_entries(lang)
+            missing = [k for k in self.base if k not in entries]
+            self.assertEqual(missing, [], f"{lang} no traduce: {missing[:8]}")
+
+    def test_coverage_is_the_same_whole_dictionary_for_every_language(self):
         sizes = {lang: len(pack_entries(lang)) for lang in PACK_IDS}
         self.assertEqual(len(set(sizes.values())), 1, sizes)
-        self.assertEqual(next(iter(sizes.values())), len(self.core) + len(self.pats) + 4)
+        self.assertEqual(next(iter(sizes.values())), len(self.base))
 
     def test_each_pack_ships_a_phrase_map_for_static_text(self):
         for lang in PACK_IDS:

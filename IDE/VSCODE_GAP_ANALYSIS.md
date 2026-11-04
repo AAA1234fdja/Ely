@@ -322,14 +322,18 @@ propia y **autocontenida**: 14 idiomas, un paquete por idioma, carga bajo demand
   patrones del backend (`hace 5 min`, `Línea 12, columna 4`, `$1 configurados`)
   tienen clave `pat.*` propia, así que cada idioma reordena la frase, no sólo
   sustituye palabras. Un test comprueba que los `$1`/`$2` sobreviven en los 12.
-- **Cobertura declarada, no fingida.** 456 de 745 claves por paquete (61 %).
-  Ajustes enseña el porcentaje real y avisa de que lo que falta sale en inglés.
-  La cadena es paquete → inglés → español: nunca aparece español en una
+- **Cobertura completa y verificada.** **745 de 745 claves** en los 12 paquetes
+  (100 %), no una muestra: incluye las 120 claves de accesibilidad, las 60 del
+  IDE, chat, almacén, visores y extensiones. Ajustes enseña el porcentaje real
+  calculado sobre el diccionario, y el aviso de fallback sólo aparece si un
+  paquete queda incompleto. La cadena paquete → inglés → español sigue viva y
+  se prueba borrando una clave en caliente: nunca aparece español en una
   interfaz japonesa. La auditoría real (app servida + jsdom, 18 rutas + chat +
   IDE + ajustes) da **0 restos en español** en en/el/ru/hi/zh/ja; en de/fr/it/pt/
   pl/la/vg los únicos avisos son palabras correctas del idioma destino que
   coinciden con palabras funcionales españolas («schließ**en**», «**la**
-  connexion», «**De** nobis»), revisadas una a una.
+  connexion», «**un** projet», «**con** permessi», «Rozw**ó**j», «**De** nobis»),
+  revisadas una a una.
 - **Latín y vendergood.** Se entregan los dos, marcados. El latín usa el léxico
   de la Vicipaedia y avisa de que no hay vocabulario técnico normalizado.
   Vendergood es la lengua construida de W. J. Sidis (1909): está documentada su
@@ -341,18 +345,24 @@ propia y **autocontenida**: 14 idiomas, un paquete por idioma, carga bajo demand
 - **Tipografía.** Respaldos de fuente para devanagari y CJK (también en la
   monoespaciada) y reglas de altura de línea por `<html lang>`, para que las
   marcas vocálicas del hindi no se recorten en el árbol de archivos.
+- **Teclas y cifras como en el teclado local.** Alemán rotula `Strg`/`Umschalt`,
+  francés `Maj`/`Échap`/`Entrée` e italiano `Invio`, igual que VS Code en esos
+  idiomas; el resto usa `Ctrl`/`Shift`/`Enter`. Las cifras nunca se traducen, la
+  unidad sí puede (chino «32 像素»). El latín usa numeración arábiga: en una
+  interfaz técnica `XIV` obliga a calcular en vez de leer.
 - **Extensiones.** El `l10n` del manifiesto acepta cualquier idioma y el host
   elige el activo con fallback a inglés; `ely.l10n()` admite mapa por idioma
   además de la forma clásica de dos argumentos.
 
 **Presupuesto de líneas.** El código de esta fase son **351 líneas** nuevas o
 modificadas (motor, selector, CSS, host de extensiones, backend), dentro del
-margen que quedaba de las 10.000. Los **12 paquetes suman 5.898 líneas**, pero
+margen que quedaba de las 10.000. Los **12 paquetes suman 9.366 líneas**, pero
 son **datos de traducción**, no lógica: se cuentan aparte, igual que los 910 SVG
-de iconos de la fase 4 no se contaron como código. Los tests (322 líneas) y el
-manifiesto de núcleo (421) tampoco son lógica de producto.
+de iconos de la fase 4 no se contaron como código. Los tests y el manifiesto de
+núcleo (421) tampoco son lógica de producto.
 
-Verificación: **293 tests Python** (35 nuevos de idiomas) y harness jsdom
-**169/169** de idiomas, sin regresiones en terminal (93), IDE+a11y (67),
-explorador (78), extensiones+Tab (100), chat (36), ida y vuelta de idioma (40) ni
-galería de iconos (19).
+Verificación: **299 tests Python** (41 de idiomas) y harness jsdom **193/193** de
+idiomas, sin regresiones en terminal (93), IDE+a11y (67), explorador (78),
+extensiones+Tab (100), chat (36), ida y vuelta de idioma (40) ni galería de
+iconos (19). Los tests de idiomas exigen ahora las 745 claves por paquete y
+vigilan marcadores, literales técnicos, cifras y alfabeto propio.
