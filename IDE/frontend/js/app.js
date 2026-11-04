@@ -377,6 +377,9 @@
         document.head.appendChild(el);
       });
       await loadScript("js/i18n.js");
+      /* El idioma activo puede ser un paquete externo (de, fr, ru, zh…):
+         se carga antes del primer render para no pintar en el idioma viejo. */
+      if (window.I18N && I18N.ensure) await I18N.ensure(I18N.lang());
       await loadScript("js/viewer.js");
       await loadScript("js/icons.js");
       await loadScript("js/syntax.js");

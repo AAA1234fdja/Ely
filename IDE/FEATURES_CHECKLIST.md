@@ -588,6 +588,28 @@ marketplace de extensiones no se simulan en web; quedan pendientes de un backend
 - ✅ **524.** Barra del editor con **▷ Ejecutar** + menú de ejecución y **⋯ del grupo**: Mostrar editores abiertos, Cerrar todo (Ctrl+K W), Cerrar guardados (Ctrl+K U), Editores de vista previa, Maximizar grupo (Ctrl+K Ctrl+M), Bloquear grupo, Configurar editores
 - ✅ **525.** **Pestañas en vista previa** en cursiva: un clic reemplaza, editar o doble clic fija
 - ✅ **526.** La terminal y sus paneles **sobreviven** al cambio de idioma, de vista y de proyecto
-- ✅ **527.** Todo el panel en **ES · EN** (88 claves nuevas) y accesible (tablist, log en vivo, señales de comando)
+- ✅ **527.** Todo el panel en **ES · EN** (88 claves nuevas) y accesible (tablist, log en vivo, señales de comando) — ampliado a los **14 idiomas** en la fase 5 (530-548)
 - ⛔ **528.** Dividir el **editor** en grupos (el icono de split del editor de VS Code): pendiente; el split implementado es el de la terminal
 - ⛔ **529.** Terminal PTY interactiva (vim, top, ssh): la ejecución es por líneas, no hay pseudo-terminal
+
+## Añadidos verificados (fase 5 · 14 idiomas en toda la interfaz)
+
+- ✅ **530.** **14 idiomas**: Deutsch, English, Español, Français, Italiano, Latine, Polski, Português, Vendergood, Ελληνικά, Русский, हिन्दी, 中文（简体）, 日本語
+- ✅ **531.** Selector ordenado **alfabéticamente por autónimo** (bloque latino → griego → cirílico → devanagari → CJK), no en el orden en que se pidieron
+- ✅ **532.** Cada opción muestra **autónimo + nombre en inglés** (`Deutsch · German`, `日本語 · Japanese`) con `aria-label`
+- ✅+🔌 **533.** Paquetes **bajo demanda**: elegir japonés descarga sólo `js/locales/ja.js`, no los doce
+- ✅ **534.** Cambio **sin parpadeo**: se carga el paquete antes de aplicar el idioma
+- ✅ **535.** **456 entradas por paquete** (415 claves núcleo + 37 patrones + 4 avisos) en los 12 idiomas que no son base
+- ✅ **536.** **37 patrones dinámicos** traducidos con sus marcadores (`vor 5 Min.`, `5 分前`, `5 мин назад`), no sólo palabras sueltas
+- ✅ **537.** Cadena de fallback **paquete → inglés → español**: un usuario japonés nunca ve texto en español
+- ✅ **538.** Ajustes muestra la **cobertura real** (`456/745 · 61 %`) y el aviso «lo que falte se muestra en inglés»
+- ✅ **539.** `<html lang>` sincronizado en todos los caminos de cambio (Ajustes, `setLang`, carga del paquete)
+- ✅ **540.** **Latín** marcado como experimental, con el léxico de la Vicipaedia (`lima`, `theca`, `inceptum`, `persona`)
+- ✅ **541.** **Vendergood** entregado y marcado como lengua construida: aproximación documentada desde su base latina/romance, **no presentada como atestiguada**, con `html lang="art-x-vendergood"`
+- ✅ **542.** Fuentes de respaldo para **devanagari y CJK** (también monoespaciada) y reglas de altura de línea por escritura
+- ✅ **543.** El mapa de frases estáticas incluye `PHRASES` como respaldo: sin él, 993 frases del DOM se quedaban en español en los idiomas nuevos
+- ✅+🔌 **544.** Extensiones: `l10n` del manifiesto acepta **cualquier idioma** y `ely.l10n()` admite **mapa por idioma** con fallback a inglés
+- ✅ **545.** El idioma llega a las extensiones en caliente (`ely:langchange` → `ely.env.language`)
+- ✅ **546.** Auditoría real en los 14 idiomas: **0 textos en español** en en/el/ru/hi/zh/ja; en el resto, sólo falsos positivos del detector revisados uno a uno
+- ⛔ **547.** Cobertura del **100 %** del diccionario (745 claves) en los 12 idiomas: pendiente; hoy es el 61 % y se declara en la UI
+- ⛔ **548.** Vendergood **atestiguado**: no hay corpus público del *Book of Vendergood*; el paquete es una aproximación explícita

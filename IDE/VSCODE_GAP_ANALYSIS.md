@@ -304,3 +304,55 @@ Lo que **no** entra en el presupuesto y se declara «próximamente» con motivo 
 depurador con breakpoints (DAP), **marketplace y `.vsix` de VS Code** (otra API y
 host Node/Electron), LSP/IntelliSense real, notebooks con kernel, remoto/túneles y voz.
 El sistema de extensiones de la fase 3 es propio y no finge compatibilidad con VSIX.
+
+## Fase 5 · 14 idiomas (localización más allá de ES · EN)
+
+VS Code distribuye la interfaz en inglés y descarga *language packs* de la
+Marketplace para el resto. Ely no tiene Marketplace, así que la localización es
+propia y **autocontenida**: 14 idiomas, un paquete por idioma, carga bajo demanda.
+
+- **Catálogo y orden.** `LANGS` fija los 14 y el selector se ordena
+  alfabéticamente por autónimo, con el bloque latino primero y luego griego,
+  cirílico, devanagari y CJK. Añadir un idioma no toca la vista.
+- **Paquetes bajo demanda.** `js/locales/<id>.js` se descarga sólo al elegir el
+  idioma, igual que hace VS Code con sus *language packs*, y se aplica después
+  de cargar para que no haya parpadeo. Español es el origen e inglés es la
+  segunda columna del diccionario: ninguno de los dos necesita paquete.
+- **Textos dinámicos.** VS Code traduce plantillas con marcadores; aquí los 37
+  patrones del backend (`hace 5 min`, `Línea 12, columna 4`, `$1 configurados`)
+  tienen clave `pat.*` propia, así que cada idioma reordena la frase, no sólo
+  sustituye palabras. Un test comprueba que los `$1`/`$2` sobreviven en los 12.
+- **Cobertura declarada, no fingida.** 456 de 745 claves por paquete (61 %).
+  Ajustes enseña el porcentaje real y avisa de que lo que falta sale en inglés.
+  La cadena es paquete → inglés → español: nunca aparece español en una
+  interfaz japonesa. La auditoría real (app servida + jsdom, 18 rutas + chat +
+  IDE + ajustes) da **0 restos en español** en en/el/ru/hi/zh/ja; en de/fr/it/pt/
+  pl/la/vg los únicos avisos son palabras correctas del idioma destino que
+  coinciden con palabras funcionales españolas («schließ**en**», «**la**
+  connexion», «**De** nobis»), revisadas una a una.
+- **Latín y vendergood.** Se entregan los dos, marcados. El latín usa el léxico
+  de la Vicipaedia y avisa de que no hay vocabulario técnico normalizado.
+  Vendergood es la lengua construida de W. J. Sidis (1909): está documentada su
+  base latina/romance, sus ocho modos y su numeración duodecimal, pero **no hay
+  corpus público de vocabulario**. El paquete es una aproximación experimental
+  explícita —cada cadena es una propuesta, no una atestiguación— con
+  `html lang="art-x-vendergood"` y aviso en Ajustes. No se inventa vocabulario
+  presentándolo como real.
+- **Tipografía.** Respaldos de fuente para devanagari y CJK (también en la
+  monoespaciada) y reglas de altura de línea por `<html lang>`, para que las
+  marcas vocálicas del hindi no se recorten en el árbol de archivos.
+- **Extensiones.** El `l10n` del manifiesto acepta cualquier idioma y el host
+  elige el activo con fallback a inglés; `ely.l10n()` admite mapa por idioma
+  además de la forma clásica de dos argumentos.
+
+**Presupuesto de líneas.** El código de esta fase son **351 líneas** nuevas o
+modificadas (motor, selector, CSS, host de extensiones, backend), dentro del
+margen que quedaba de las 10.000. Los **12 paquetes suman 5.898 líneas**, pero
+son **datos de traducción**, no lógica: se cuentan aparte, igual que los 910 SVG
+de iconos de la fase 4 no se contaron como código. Los tests (322 líneas) y el
+manifiesto de núcleo (421) tampoco son lógica de producto.
+
+Verificación: **293 tests Python** (35 nuevos de idiomas) y harness jsdom
+**169/169** de idiomas, sin regresiones en terminal (93), IDE+a11y (67),
+explorador (78), extensiones+Tab (100), chat (36), ida y vuelta de idioma (40) ni
+galería de iconos (19).

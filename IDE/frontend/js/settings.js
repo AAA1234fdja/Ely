@@ -8,7 +8,7 @@
 
   const Settings = {
     defaults: {
-      language: "es",           // es | en (idioma de la interfaz)
+      language: "es",           // uno de los 14 idiomas de I18N.langs
       tabCompletion: true,      // completar código con Tab (ACTIVADO por defecto)
       nationality: "CO",        // nacionalidad → zona horaria de las horas
       workLocation: "local",    // lugar de trabajo principal (local = Local Storage)
@@ -150,18 +150,44 @@
         ]));
       }
 
-      /* --- idioma (español / inglés), con efecto inmediato --- */
-      const langSelect = UI.el("select", {
-        style: { width: "150px" },
-        onchange: (event) => {
-          this.set({ language: event.target.value });
-          if (rebuild) rebuild();
+      /* --- idioma: 14 paquetes, orden alfabético por nombre nativo --- */
+      const langInfo = UI.el("div", { class: "muted set-lang-info", style: { fontSize: "11px", marginTop: "4px" } });
+      const paintLangInfo = () => {
+        const id = I18N.lang();
+        const meta = I18N.meta(id);
+        const cov = I18N.coverage(id);
+        UI.clear(langInfo);
+        langInfo.appendChild(UI.el("span", {
+          text: meta.name + " · " + cov.translated + "/" + cov.total + " (" + cov.pct + "%) " + t("set.langCoverage")
+        }));
+        if (meta.note) {
+          langInfo.appendChild(UI.el("div", { class: "set-lang-note", style: { marginTop: "2px" }, text: t("set.langNote." + meta.note) }));
         }
-      }, [
-        UI.el("option", { value: "es", selected: values.language !== "en", text: "Español" }),
-        UI.el("option", { value: "en", selected: values.language === "en", text: "English" })
-      ]);
-      box.appendChild(row(t("set.language"), t("set.languageHint"), langSelect));
+        if (cov.pct < 100) {
+          langInfo.appendChild(UI.el("div", { class: "set-lang-note", style: { marginTop: "2px" }, text: t("set.langFallback") }));
+        }
+      };
+      /* Si el idioma cambia desde fuera del panel (paleta, API), la info se
+       * repinta sola; el listener se retira cuando el panel sale del DOM. */
+      const onLangChange = () => {
+        if (!langInfo.isConnected) { window.removeEventListener("ely:langchange", onLangChange); return; }
+        paintLangInfo();
+      };
+      window.addEventListener("ely:langchange", onLangChange);
+      const langSelect = UI.el("select", {
+        style: { width: "230px" },
+        "aria-label": t("set.language"),
+        onchange: (event) => {
+          const id = event.target.value;
+          /* Carga el paquete antes de aplicar el idioma: así no hay parpadeo. */
+          I18N.setLang(id).then(() => { paintLangInfo(); if (rebuild) rebuild(); });
+        }
+      }, I18N.langs.map((l) => UI.el("option", {
+        value: l.id, selected: values.language === l.id,
+        text: l.name + (l.name === l.en ? "" : " · " + l.en)
+      })));
+      paintLangInfo();
+      box.appendChild(row(t("set.language"), t("set.languageHint"), UI.el("div", {}, [langSelect, langInfo])));
 
       /* --- nacionalidad → zona horaria de las horas --- */
       const preview = UI.el("span", { class: "mono", style: { fontSize: "12px" }, text: I18N.fmtDateTime(new Date()) });
@@ -173,7 +199,7 @@
         }
       }, I18N.countries.map((c) => UI.el("option", {
         value: c.id, selected: values.nationality === c.id,
-        text: (I18N.lang() === "en" ? c.en : c.es) + " · " + c.tz.split("/").pop().replace(/_/g, " ")
+        text: (I18N.lang() === "es" ? c.es : c.en) + " · " + c.tz.split("/").pop().replace(/_/g, " ")
       })));
       box.appendChild(row(t("set.nationality"), t("set.nationalityHint"), countrySelect));
       box.appendChild(row(t("set.timePreview"), "mes/día/año hora:minuto", preview));

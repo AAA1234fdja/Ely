@@ -1,8 +1,17 @@
-/* Ely Cowork · internacionalización (español / inglés) y zona horaria.
+/* Ely Cowork · internacionalización (14 idiomas) y zona horaria.
  *
  * El idioma y la nacionalidad se guardan en Settings. La nacionalidad determina
  * la zona horaria con la que se muestran las horas (p. ej. la hora de fin de una
  * respuesta del chat). El formato pedido es mes/día/año hora:minuto.
+ *
+ * Español e inglés viven en el diccionario base `D` (pares [es, en]). El resto
+ * de idiomas son paquetes que se cargan bajo demanda desde `js/locales/<id>.js`
+ * y se registran con `I18N.register(id, dict)`. Lo que un paquete no traduce
+ * cae a inglés y, en último término, a español: nunca se muestra una clave.
+ *
+ * Orden de la lista: alfabético por nombre nativo (autónimo), primero alfabeto
+ * latino y después griego, cirílico, devanagari y CJK, como hacen los selectores
+ * de idioma de Wikipedia o del propio sistema operativo.
  *
  * Se carga en tiempo de ejecución desde app.js (el index.html no se toca).
  * Expone `window.I18N` y un atajo `window.t`.
@@ -419,7 +428,11 @@
     "set.title": ["Ajustes", "Settings"],
     "set.subtitle": ["preferencias del cliente", "client preferences"],
     "set.language": ["Idioma", "Language"],
-    "set.languageHint": ["español o inglés en toda la interfaz", "Spanish or English across the interface"],
+    "set.languageHint": ["14 idiomas en toda la interfaz", "14 languages across the interface"],
+    "set.langCoverage": ["de las frases traducidas", "of the phrases translated"],
+    "set.langFallback": ["Lo que falte se muestra en inglés.", "Anything missing is shown in English."],
+    "set.langNote.experimental": ["Traducción experimental: el latín no tiene vocabulario técnico normalizado.", "Experimental translation: Latin has no standardised technical vocabulary."],
+    "set.langNote.constructed": ["Vendergood (W. J. Sidis, 1909): lengua construida con corpus público mínimo; paquete experimental con respaldo en inglés.", "Vendergood (W. J. Sidis, 1909): a constructed language with a tiny public corpus; experimental pack backed by English."],
     "set.nationality": ["Nacionalidad", "Nationality"],
     "set.nationalityHint": ["zona horaria para las horas (fin de respuesta)", "time zone for timestamps (response completion)"],
     "set.timePreview": ["Hora local ahora", "Local time now"],
@@ -742,8 +755,74 @@
     "common.delete": ["Eliminar", "Delete"],
     "common.retry": ["Reintentar", "Retry"],
     "common.loading": ["Cargando…", "Loading…"],
-    "common.opFail": ["No se pudo completar la operación", "Could not complete the operation"]
+    "common.opFail": ["No se pudo completar la operación", "Could not complete the operation"],
+
+    // --- plantillas dinámicas (los paquetes traducen pat.* con $1, $2…)
+    "pat.agoS": ["hace $1 s", "$1 s ago"],
+    "pat.agoMin": ["hace $1 min", "$1 min ago"],
+    "pat.agoH": ["hace $1 h", "$1 h ago"],
+    "pat.justNow": ["hace un momento", "just now"],
+    "pat.configured": ["$1 configurados", "$1 configured"],
+    "pat.meanLatency": ["latencia media $1", "mean latency $1"],
+    "pat.success": ["$1% con éxito", "$1% success"],
+    "pat.calls": ["$1 llamadas", "$1 calls"],
+    "pat.files": ["$1 archivos", "$1 files"],
+    "pat.steps": ["$1 pasos", "$1 steps"],
+    "pat.saved": ["$1 guardadas", "$1 saved"],
+    "pat.chats": ["$1 conversaciones", "$1 chats"],
+    "pat.profiles": ["$1 perfiles", "$1 profiles"],
+    "pat.testing": ["probando $1 perfiles…", "testing $1 profiles…"],
+    "pat.endpoints": ["$1 endpoint(s) respondieron · $2", "$1 endpoint(s) replied · $2"],
+    "pat.lineCol": ["Línea $1, columna $2", "Line $1, column $2"],
+    "pat.spaces": ["Espacios: $1", "Spaces: $1"],
+    "pat.chars": ["$1 caracteres", "$1 characters"],
+    "pat.words": ["$1 palabras", "$1 words"],
+    "pat.matches": ["$1 coincidencias", "$1 matches"],
+    "pat.results": ["$1 resultados", "$1 results"],
+    "pat.selected": ["$1 seleccionados", "$1 selected"],
+    "pat.updated": ["Actualizado $1", "Updated $1"],
+    "pat.created": ["Creado $1", "Created $1"],
+    "pat.agents": ["$1 agentes", "$1 agents"],
+    "pat.mcp": ["$1 servidor(es) MCP declarados. Ely no los arranca automáticamente.", "$1 MCP server(s) declared. Ely does not start them automatically."],
+    "pat.hidden": ["$1 (oculta)", "$1 (hidden)"],
+    "pat.skills": ["$1 skills", "$1 skills"],
+    "pat.repos": ["$1 repositorios", "$1 repositories"],
+    "pat.notes": ["$1 notas", "$1 notes"],
+    "pat.tools": ["$1 herramientas", "$1 tools"],
+    "pat.flows": ["$1 flujos", "$1 flows"],
+    "pat.teams": ["$1 equipos", "$1 teams"],
+    "pat.jobs": ["$1 trabajos", "$1 jobs"],
+    "pat.devices": ["$1 dispositivos", "$1 devices"],
+    "pat.tls": ["La conexión TLS se cerró durante el handshake. Causa típica: un proxy de salida (sandbox/egress) bloquea este host.$1", "The TLS connection closed during the handshake. Typical cause: an egress proxy (sandbox) blocks this host.$1"],
+    "pat.noHttp": ["No hubo respuesta HTTP: DNS, TLS o un proxy de salida bloquea el host.$1", "No HTTP reply: DNS, TLS or an egress proxy blocks the host.$1"]
   };
+
+  /* ------------------------------------------------------------------ *
+   * Idiomas disponibles. `id` es el valor que se guarda en Settings;    *
+   * `htmlLang` es la etiqueta BCP-47 que se pone en <html lang>.        *
+   * `note` marca los paquetes experimentales (latín y vendergood).      *
+   * ------------------------------------------------------------------ */
+  const LANGS = [
+    { id: "de", name: "Deutsch", en: "German", es: "Alemán", htmlLang: "de", script: "latin" },
+    { id: "en", name: "English", en: "English", es: "Inglés", htmlLang: "en", script: "latin" },
+    { id: "es", name: "Español", en: "Spanish", es: "Español", htmlLang: "es", script: "latin" },
+    { id: "fr", name: "Français", en: "French", es: "Francés", htmlLang: "fr", script: "latin" },
+    { id: "it", name: "Italiano", en: "Italian", es: "Italiano", htmlLang: "it", script: "latin" },
+    { id: "la", name: "Latine", en: "Latin", es: "Latín", htmlLang: "la", script: "latin", note: "experimental" },
+    { id: "pl", name: "Polski", en: "Polish", es: "Polaco", htmlLang: "pl", script: "latin" },
+    { id: "pt", name: "Português", en: "Portuguese", es: "Portugués", htmlLang: "pt", script: "latin" },
+    { id: "vg", name: "Vendergood", en: "Vendergood", es: "Vendergood", htmlLang: "art-x-vendergood", script: "latin", note: "constructed" },
+    { id: "el", name: "Ελληνικά", en: "Greek", es: "Griego", htmlLang: "el", script: "greek" },
+    { id: "ru", name: "Русский", en: "Russian", es: "Ruso", htmlLang: "ru", script: "cyrillic" },
+    { id: "hi", name: "हिन्दी", en: "Hindi", es: "Hindi", htmlLang: "hi", script: "devanagari" },
+    { id: "zh", name: "中文（简体）", en: "Chinese (Simplified)", es: "Chino (mandarín)", htmlLang: "zh-Hans", script: "cjk" },
+    { id: "ja", name: "日本語", en: "Japanese", es: "Japonés", htmlLang: "ja", script: "cjk" }
+  ];
+  const LANG_IDS = LANGS.map((l) => l.id);
+  /* Paquetes cargados: id → { key: texto } (+ opcional `extra` y `phrases`). */
+  const LOCALES = { es: null, en: null };
+  const PHRASE_CACHE = {};
+  const loading = {};
 
   /* Nacionalidad → zona horaria IANA + locale. */
   const COUNTRIES = [
@@ -771,22 +850,83 @@
 
   const I18N = {
     countries: COUNTRIES,
+    langs: LANGS,
+    base: D,
 
     lang() {
       const l = settings().language;
-      return l === "en" ? "en" : "es";
+      return LANG_IDS.indexOf(l) >= 0 ? l : "es";
     },
 
-    idx() { return this.lang() === "en" ? 1 : 0; },
+    meta(id) {
+      const want = id || this.lang();
+      return LANGS.find((l) => l.id === want) || LANGS[2];
+    },
+
+    /* 0 = español (origen), 1 = cualquier otro idioma (se traduce el DOM). */
+    idx() { return this.lang() === "es" ? 0 : 1; },
+
+    has(id) { return id === "es" || id === "en" || !!LOCALES[id]; },
+
+    /** Registra un paquete de idioma (lo llaman js/locales/<id>.js). */
+    register(id, dict) {
+      if (LANG_IDS.indexOf(id) < 0 || !dict) return false;
+      LOCALES[id] = dict;
+      delete PHRASE_CACHE[id];
+      if (this.lang() === id) {
+        document.documentElement.lang = this.meta(id).htmlLang;
+        window.dispatchEvent(new CustomEvent("ely:langchange", { detail: { language: id } }));
+      }
+      return true;
+    },
+
+    /** Carga el paquete si hace falta. Español e inglés ya están dentro. */
+    ensure(id) {
+      const target = LANG_IDS.indexOf(id) >= 0 ? id : "es";
+      if (this.has(target)) return Promise.resolve(target);
+      if (loading[target]) return loading[target];
+      loading[target] = new Promise((resolve) => {
+        const el = document.createElement("script");
+        el.src = "js/locales/" + target + ".js?v=" + (window.APP_VERSION || "1");
+        el.onload = () => { delete loading[target]; resolve(target); };
+        el.onerror = () => { delete loading[target]; resolve("en"); };
+        document.head.appendChild(el);
+      });
+      return loading[target];
+    },
 
     t(key) {
       const entry = D[key];
+      const lang = this.lang();
+      if (lang === "es") return entry ? entry[0] : key;
+      if (lang !== "en") {
+        const pack = LOCALES[lang];
+        if (pack && pack[key]) return pack[key];
+      }
       if (!entry) return key;
-      return entry[this.idx()] || entry[0];
+      return entry[1] || entry[0];
+    },
+
+    /** Paquete registrado (o null). Útil para tests y para el panel de Ajustes. */
+    dict(id) { return LOCALES[id || this.lang()] || null; },
+
+    /** Cobertura real del paquete: cuántas claves del base están traducidas. */
+    coverage(id) {
+      const target = id || this.lang();
+      const total = Object.keys(D).length;
+      if (target === "es" || target === "en") return { translated: total, total: total, pct: 100 };
+      const pack = LOCALES[target] || {};
+      const done = Object.keys(D).filter((k) => !!pack[k]).length;
+      return { translated: done, total: total, pct: Math.round((done / total) * 100) };
     },
 
     setLang(lang) {
-      if (window.Settings) Settings.set({ language: lang === "en" ? "en" : "es" });
+      const target = LANG_IDS.indexOf(lang) >= 0 ? lang : "es";
+      return this.ensure(target).then(() => {
+        if (window.Settings) Settings.set({ language: target });
+        document.documentElement.lang = this.meta(target).htmlLang;
+        return target;
+      });
     },
 
     country() {
@@ -798,7 +938,7 @@
 
     countryLabel() {
       const c = this.country();
-      return this.lang() === "en" ? c.en : c.es;
+      return this.lang() === "es" ? c.es : c.en;
     },
 
     /** mes/día/año hora:minuto en la zona horaria de la nacionalidad. */
@@ -1123,58 +1263,98 @@
   });
   Object.keys(EXTRA).forEach((es) => { PHRASES[es] = EXTRA[es]; });
 
-  /* Textos dinámicos con números: "hace 5 min", "11 configurados"… */
+  /** Mapa es→idioma activo para el traductor de DOM (con caché por idioma). */
+  function phrasesFor(lang) {
+    if (lang === "es") return null;
+    if (lang === "en") return PHRASES;
+    if (PHRASE_CACHE[lang]) return PHRASE_CACHE[lang];
+    const pack = LOCALES[lang] || {};
+    const extra = pack.extra || {};
+    const own = pack.phrases || {};
+    const map = {};
+    /* Primera traducción que llega gana; nunca se mapea un texto a sí mismo. */
+    const put = (es, target) => {
+      if (!es || !target || target === es) return;
+      if (!Object.prototype.hasOwnProperty.call(map, es)) map[es] = target;
+    };
+    /* 1. Frases que el paquete traduce explícitamente. */
+    Object.keys(own).forEach((es) => put(es, own[es]));
+    Object.keys(extra).forEach((es) => put(es, extra[es]));
+    /* 2. Diccionario base: traducción del idioma o, si no la hay, inglés. */
+    Object.keys(D).forEach((key) => {
+      const pair = D[key];
+      if (!pair || !pair[0]) return;
+      put(pair[0], pack[key] || pair[1]);
+    });
+    /* 3. Textos estáticos del DOM. PHRASES es el diccionario grande es→en y
+     *    también sirve de respaldo para el resto de idiomas: sin él, las
+     *    frases que sólo viven ahí se quedaban en español. */
+    Object.keys(EXTRA).forEach((es) => put(es, extra[es] || EXTRA[es]));
+    Object.keys(PHRASES).forEach((es) => put(es, extra[es] || own[es] || PHRASES[es]));
+    PHRASE_CACHE[lang] = map;
+    return map;
+  }
+
+  function patternTemplate(pair) {
+    const lang = I18N.lang();
+    if (lang === "en" || !pair[2]) return pair[1];
+    const pack = LOCALES[lang];
+    return (pack && pack[pair[2]]) || pair[1];
+  }
+
+  /* Textos dinámicos con números: "hace 5 min", "11 configurados"…
+   * Cada patrón tiene una clave `pat.*` para que los paquetes de idioma
+   * puedan traducir la plantilla; si no la traen, se usa la inglesa. */
   const PATTERNS = [
-    [/^hace (\d+) s$/, "$1 s ago"],
-    [/^hace (\d+) min$/, "$1 min ago"],
-    [/^hace (\d+) h$/, "$1 h ago"],
-    [/^hace un momento$/, "just now"],
-    [/^(\d+) configurados$/, "$1 configured"],
-    [/^latencia media (.+)$/, "mean latency $1"],
-    [/^([\d.,]+)% con éxito$/, "$1% success"],
-    [/^(\d+) llamadas$/, "$1 calls"],
-    [/^(\d+) archivos$/, "$1 files"],
-    [/^(\d+) pasos$/, "$1 steps"],
-    [/^(\d+) guardadas$/, "$1 saved"],
-    [/^(\d+) conversaciones$/, "$1 chats"],
-    [/^(\d+) perfiles$/, "$1 profiles"],
-    [/^probando (\d+) perfiles…$/, "testing $1 profiles…"],
-    [/^(\d+) endpoint\(s\) respondieron · (.+)$/, "$1 endpoint(s) replied · $2"],
-    [/^Línea (\d+), columna (\d+)$/, "Line $1, column $2"],
-    [/^Espacios: (\d+)$/, "Spaces: $1"],
-    [/^(\d+) caracteres$/, "$1 characters"],
-    [/^(\d+) palabras$/, "$1 words"],
-    [/^(\d+) coincidencias$/, "$1 matches"],
-    [/^(\d+) resultados$/, "$1 results"],
-    [/^(\d+) seleccionados$/, "$1 selected"],
-    [/^Actualizado (.+)$/, "Updated $1"],
-    [/^Creado (.+)$/, "Created $1"],
-    [/^(\d+) agentes$/, "$1 agents"],
-    [/^(\d+) servidor\(es\) MCP declarados\. Ely no los arranca automáticamente\.$/, "$1 MCP server(s) declared. Ely does not start them automatically."],
-    [/^(\S+) \(oculta\)$/, "$1 (hidden)"],
-    [/^(\d+) skills$/, "$1 skills"],
-    [/^(\d+) repositorios$/, "$1 repositories"],
-    [/^(\d+) notas$/, "$1 notes"],
-    [/^(\d+) herramientas$/, "$1 tools"],
-    [/^(\d+) flujos$/, "$1 flows"],
-    [/^(\d+) equipos$/, "$1 teams"],
-    [/^(\d+) trabajos$/, "$1 jobs"],
-    [/^(\d+) dispositivos$/, "$1 devices"],
-    [/^La conexión TLS se cerró durante el handshake\. Causa típica: un proxy de salida \(sandbox\/egress\) bloquea este host\.(.*)$/,
-     "The TLS connection closed during the handshake. Typical cause: an egress proxy (sandbox) blocks this host.$1"],
-    [/^No hubo respuesta HTTP: DNS, TLS o un proxy de salida bloquea el host\.(.*)$/,
-     "No HTTP reply: DNS, TLS or an egress proxy blocks the host.$1"],
+    [/^hace (\d+) s$/, "$1 s ago", "pat.agoS"],
+    [/^hace (\d+) min$/, "$1 min ago", "pat.agoMin"],
+    [/^hace (\d+) h$/, "$1 h ago", "pat.agoH"],
+    [/^hace un momento$/, "just now", "pat.justNow"],
+    [/^(\d+) configurados$/, "$1 configured", "pat.configured"],
+    [/^latencia media (.+)$/, "mean latency $1", "pat.meanLatency"],
+    [/^([\d.,]+)% con éxito$/, "$1% success", "pat.success"],
+    [/^(\d+) llamadas$/, "$1 calls", "pat.calls"],
+    [/^(\d+) archivos$/, "$1 files", "pat.files"],
+    [/^(\d+) pasos$/, "$1 steps", "pat.steps"],
+    [/^(\d+) guardadas$/, "$1 saved", "pat.saved"],
+    [/^(\d+) conversaciones$/, "$1 chats", "pat.chats"],
+    [/^(\d+) perfiles$/, "$1 profiles", "pat.profiles"],
+    [/^probando (\d+) perfiles…$/, "testing $1 profiles…", "pat.testing"],
+    [/^(\d+) endpoint\(s\) respondieron · (.+)$/, "$1 endpoint(s) replied · $2", "pat.endpoints"],
+    [/^Línea (\d+), columna (\d+)$/, "Line $1, column $2", "pat.lineCol"],
+    [/^Espacios: (\d+)$/, "Spaces: $1", "pat.spaces"],
+    [/^(\d+) caracteres$/, "$1 characters", "pat.chars"],
+    [/^(\d+) palabras$/, "$1 words", "pat.words"],
+    [/^(\d+) coincidencias$/, "$1 matches", "pat.matches"],
+    [/^(\d+) resultados$/, "$1 results", "pat.results"],
+    [/^(\d+) seleccionados$/, "$1 selected", "pat.selected"],
+    [/^Actualizado (.+)$/, "Updated $1", "pat.updated"],
+    [/^Creado (.+)$/, "Created $1", "pat.created"],
+    [/^(\d+) agentes$/, "$1 agents", "pat.agents"],
+    [/^(\d+) servidor\(es\) MCP declarados\. Ely no los arranca automáticamente\.$/, "$1 MCP server(s) declared. Ely does not start them automatically.", "pat.mcp"],
+    [/^(\S+) \(oculta\)$/, "$1 (hidden)", "pat.hidden"],
+    [/^(\d+) skills$/, "$1 skills", "pat.skills"],
+    [/^(\d+) repositorios$/, "$1 repositories", "pat.repos"],
+    [/^(\d+) notas$/, "$1 notes", "pat.notes"],
+    [/^(\d+) herramientas$/, "$1 tools", "pat.tools"],
+    [/^(\d+) flujos$/, "$1 flows", "pat.flows"],
+    [/^(\d+) equipos$/, "$1 teams", "pat.teams"],
+    [/^(\d+) trabajos$/, "$1 jobs", "pat.jobs"],
+    [/^(\d+) dispositivos$/, "$1 devices", "pat.devices"],
+    [/^La conexión TLS se cerró durante el handshake\. Causa típica: un proxy de salida \(sandbox\/egress\) bloquea este host\.(.*)$/, "The TLS connection closed during the handshake. Typical cause: an egress proxy (sandbox) blocks this host.$1", "pat.tls"],
+    [/^No hubo respuesta HTTP: DNS, TLS o un proxy de salida bloquea el host\.(.*)$/, "No HTTP reply: DNS, TLS or an egress proxy blocks the host.$1", "pat.noHttp"],
   ];
 
   /** Traduce un texto suelto (frase exacta o patrón con números). */
   function tr(text) {
-    if (I18N.lang() !== "en" || text == null) return text;
+    const map = phrasesFor(I18N.lang());
+    if (!map || text == null) return text;
     const value = String(text);
     const trimmed = value.trim();
-    const hit = PHRASES[trimmed];
+    const hit = map[trimmed];
     if (hit) return value.replace(trimmed, hit);
     for (const pair of PATTERNS) {
-      if (pair[0].test(trimmed)) return value.replace(trimmed, trimmed.replace(pair[0], pair[1]));
+      if (pair[0].test(trimmed)) return value.replace(trimmed, trimmed.replace(pair[0], patternTemplate(pair)));
     }
     return text;
   }
@@ -1189,10 +1369,12 @@
     if (!trimmed) return null;
     const lead = value.match(/^\s*/)[0];
     const tail = value.match(/\s*$/)[0];
-    const hit = PHRASES[trimmed];
+    const map = phrasesFor(I18N.lang());
+    if (!map) return null;
+    const hit = map[trimmed];
     if (hit) return lead + hit + tail;
     for (const pair of PATTERNS) {
-      if (pair[0].test(trimmed)) return lead + trimmed.replace(pair[0], pair[1]) + tail;
+      if (pair[0].test(trimmed)) return lead + trimmed.replace(pair[0], patternTemplate(pair)) + tail;
     }
     return null;
   }
@@ -1202,7 +1384,7 @@
     applying = true;
     try {
       const target = root || document.body;
-      const en = I18N.lang() === "en";
+      const en = I18N.lang() !== "es";   /* cualquier idioma distinto del origen */
       const walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT, {
         acceptNode(node) {
           const p = node.parentElement;
@@ -1243,8 +1425,11 @@
 
   I18N.apply = apply;
   I18N.phrases = PHRASES;
+  I18N.phrasesFor = phrasesFor;
   I18N.tr = tr;
   I18N.extra = EXTRA;
+  I18N.patterns = PATTERNS;
+  document.documentElement.lang = I18N.meta().htmlLang;
 
   /* Re-aplica tras renders dinámicos y al cambiar de idioma. */
   let pending = null;
@@ -1260,7 +1445,13 @@
     if (document.body) obs.observe(document.body, { childList: true, subtree: true, characterData: true });
     else document.addEventListener("DOMContentLoaded", () => obs.observe(document.body, { childList: true, subtree: true, characterData: true }));
   }
-  window.addEventListener("ely:langchange", () => apply(document.body));
+  /* Un único punto que mantiene <html lang> sincronizado, venga el cambio de
+   * Ajustes, de setLang() o de la carga de un paquete. Lo usan las reglas CSS
+   * por escritura (devanagari, CJK) y los lectores de pantalla. */
+  window.addEventListener("ely:langchange", () => {
+    document.documentElement.lang = I18N.meta().htmlLang;
+    apply(document.body);
+  });
 
   window.I18N = I18N;
   window.t = (key) => I18N.t(key);

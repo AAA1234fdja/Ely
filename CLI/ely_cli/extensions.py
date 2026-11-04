@@ -216,6 +216,8 @@ def _entry(root: Path, folder: Path, source: str, index: dict[str, Any]) -> dict
         "permissionLabels": [_permission_label(p) for p in manifest["permissions"]],
         "nameEn": str((manifest["l10n"].get("en") or {}).get("name") or ""),
         "descriptionEn": str((manifest["l10n"].get("en") or {}).get("description") or ""),
+        # Mapa completo {idioma: {name, description}} para los 14 idiomas de la UI.
+        "l10n": manifest["l10n"],
         "readme": any((folder / name).is_file() for name in ("README.md", "readme.md", "README.txt")),
         "contributes": manifest["contributes"],
         "main": manifest["main"],
@@ -642,7 +644,20 @@ BRIDGE_JS = r"""
     manifest: null,
     /* Idioma de la interfaz: el host lo envía al activar y al cambiarlo. */
     env: { language: "es", uiLanguage: "es" },
-    l10n: function (es, en) { return ely.env.language === "en" ? en : es; },
+    /* l10n("Hola", "Hello")  -> forma clásica de dos argumentos.
+     * l10n({es:"Hola", en:"Hello", de:"Hallo", ...}) -> mapa por idioma.
+     * Si el idioma activo no está en el mapa, cae a inglés y luego a español. */
+    l10n: function (a, b) {
+      var lang = ely.env.language || "es";
+      if (a && typeof a === "object") {
+        if (typeof a[lang] === "string") return a[lang];
+        if (typeof a.en === "string") return a.en;
+        if (typeof a.es === "string") return a.es;
+        return "";
+      }
+      if (lang === "es") return a;
+      return typeof b === "string" ? b : a;
+    },
     commands: {
       register: function (id, title, handler) {
         handlers["command:" + id] = handler;

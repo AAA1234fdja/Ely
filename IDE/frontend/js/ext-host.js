@@ -450,12 +450,21 @@
     return ExtHost;
   }
 
-  /* Nombre y descripción en el idioma de la interfaz (manifiesto l10n). */
+  /* Nombre y descripción en el idioma de la interfaz (manifiesto l10n).
+   * Orden: idioma activo -> inglés -> español del manifiesto. */
   function localized(ext) {
-    const en = uiLanguage() === "en";
+    const lang = uiLanguage();
+    const map = ext.l10n || {};
+    const pick = (field, fallback) => {
+      const direct = (map[lang] || {})[field];
+      if (direct) return direct;
+      if (lang === "es") return fallback;
+      const en = field === "name" ? ext.nameEn : ext.descriptionEn;
+      return en || (map.en || {})[field] || fallback;
+    };
     return {
-      name: (en && ext.nameEn) || ext.name,
-      description: (en && ext.descriptionEn) || ext.description || ""
+      name: pick("name", ext.name),
+      description: pick("description", ext.description || "")
     };
   }
 
