@@ -27,6 +27,7 @@ class Agent:
     temperature: float = 0.6
     max_tokens: int = 1200
     tools: list[str] = field(default_factory=list)
+    capabilities: list[str] = field(default_factory=list)
     harness: str | None = None
     starter: str = ""
 
@@ -48,6 +49,10 @@ AGENTS: list[Agent] = [
         tools=[
             "workspace.list_files", "workspace.read_file", "workspace.search",
             "workspace.write_file", "workspace.run_command", "harness.run", "harness.set_token_target", "agent.spawn_subagent", "laya.decide",
+        ],
+        capabilities=[
+            "workspace.read", "workspace.write", "process.isolated", "harness.execute",
+            "harness.configure", "agent.delegate", "laya.recommend", "mcp.invoke",
         ],
         system=(
             "Eres Photon, el agente orquestador de Ely Cowork. Responde siempre en "
@@ -83,6 +88,7 @@ AGENTS: list[Agent] = [
             "workspace.list_files", "workspace.read_file", "workspace.search",
             "workspace.write_file", "workspace.run_command",
         ],
+        capabilities=["workspace.read", "workspace.write", "process.isolated"],
         system=(
             "Eres Codey, ingeniero de software senior de Ely Cowork. Escribes código "
             "de producción, completo y ejecutable, sin pseudocódigo ni TODOs "

@@ -33,7 +33,7 @@ checkout ni convierten en capacidades de Ely el código upstream/vendorado de
 | Prioridad | Pendiente para competir en tareas de ingeniería | Estado verificable hoy |
 |---|---|---|
 | 1 | Bucle agéntico de herramientas: ejecutar, observar resultados y corregir sin abortar tareas largas. | Photon/Codey tienen tools locales y MCP configurado; Laya orienta al agente principal. Los presupuestos escalan por workspace/tests (5–12 rondas, 8–32 llamadas) y existe techo total por tarea (12 000 tokens por defecto); al agotarse se devuelve parcial. Photon puede delegar tareas acotadas a hijos tipados sin heredar el chat ni volver a delegar. Falta paralelismo seguro y memoria compartida por proyecto. |
-| 2 | Edición y ejecución con límites de seguridad explícitos. | Las herramientas de chat ejecutan en snapshot aislado con Landlock + namespace de red si Linux lo permite; no ven `.ely`, secretos ni archivos privados y devuelven diff sin aplicarlo. Si no hay aislamiento, falla cerrado. En la terminal hay modos Solo lectura, Workspace aislado y Acceso total; este último exige confirmación por comando. | |
+| 2 | Edición y ejecución con límites de seguridad explícitos. | Las herramientas de chat ejecutan en snapshot aislado; el sandbox Linux crea namespaces de usuario/PID/red, instala Landlock y un filtro seccomp-BPF (bloquea, entre otras, `ptrace`, `mount`, `setns` y `unshare`) antes del comando, además de aislar la red. `/proc`, `/sys` y `/dev` quedan bloqueados; Landlock permite ejecutar solo el intérprete de la tarea y binarios de una allowlist del sistema, no ejecutables generados en el workspace. No ven `.ely`, secretos ni archivos privados, y devuelven diff sin aplicarlo. Si no hay aislamiento compatible, falla cerrado. Hay un perfil AppArmor opt-in en `CLI/security/` (requiere instalación administrativa); SELinux aún no está integrado. Las salidas de herramientas se etiquetan como no confiables y se escanean con heurísticas de inyección antes de volver al modelo (solo alerta, no bloquea ni garantiza detección). En la terminal hay modos Solo lectura, Workspace aislado y Acceso total; este último exige confirmación por comando. | |
 | 3 | Cliente MCP funcional JSON-RPC (stdio/transportes soportados), con ciclo de vida y llamadas reales. | `mcp_client.py` inicia servidores stdio declarados y soporta Streamable HTTP; lista y ejecuta tools en el bucle de chat. El transporte SSE antiguo no está soportado; solo se conectan servidores explícitamente declarados y habilitados. |
 | 4 | Integrar DAG, WEV y Harness² como ejecutor configurable del chat. | `harness.run`/`POST /api/cowork/run` invocan `CoworkRunner` con el perfil activo. Harness² prueba candidatos con WEV bajo un presupuesto global pequeño; puede ajustar `max_tokens` gradualmente y proponer cambios de prompt/skills/guardrails. Photon puede editar el objetivo de tokens entre 128 y 4096, con techo global; los permisos de seguridad no son adaptables. El chat normal sigue disponible. |
 | 5 | Ejecutar y publicar resultados reproducibles de benchmarks externos con versiones, modelo, configuración y coste. | No se publican resultados de SWE-bench Verified ni Terminal-Bench para Ely. |
@@ -107,7 +107,11 @@ que la guarda en `.ely/keys.env` con permisos `600`.
 
 Cada perfil es un JSON en `profiles/`. `base_url` puede ser la raíz del API o la
 URL completa; el cliente añade `/chat/completions` (o `/messages` en Anthropic).
-Los campos `{VARIABLE}` se sustituyen desde el entorno al cargar.
+Los campos `{VARIABLE}` se sustituyen desde el entorno al cargar. Cada perfil limita
+por defecto 60 peticiones por minuto dentro del proceso; se puede configurar
+`"requests_per_minute": 12` en su JSON, o usar `0` para desactivar el límite local.
+Cada perfil tiene su propio contador; el proveedor sigue siendo la autoridad sobre
+sus cuotas reales.
 
 ## CLI
 
@@ -348,8 +352,8 @@ activas. Config opcional ignorada por Git: `.ely/key-pool.json`, por ejemplo
 `{"roles":{"coder":["deepseek","openrouter"],"reviewer":["groq"]}}`.
 `GET /api/key-pool` muestra metadatos sin secretos, `POST /api/key-pool/roles`
 guarda la lista de perfiles elegibles por rol y `POST /api/key-pool/validate`
-valida un perfil explícitamente. No hay telemetría de coste/cuota por clave ni
-control de RPM integrado todavía; perfiles con claves de fixture se excluyen.
+valida un perfil explícitamente. El límite local de RPM es por perfil y no mide
+la cuota real ni el coste de cada clave; los perfiles con claves de fixture se excluyen.
 
 ## Harness y MCPs: integración actual
 
@@ -358,7 +362,9 @@ control de RPM integrado todavía; perfiles con claves de fixture se excluyen.
   `GET /api/tools` y los turnos de chat cargan el catálogo e inician servidores
   habilitados cuando hace falta. Los servidores que referencian variables ausentes
   se omiten y aparecen en `/api/backends` como bloqueados (sin revelar valores).
-  No soporta el transporte SSE legado.
+  No soporta el transporte SSE legado. Las firmas Ed25519 de manifiestos JSON
+  son opt-in en `.ely/mcp-policy.json`; consulta `CLI/security/MCP-SIGNATURES.md`
+  para instalar claves confiables y firmar manifiestos.
 - `Harness-Candy/` — `CoworkRunner` se puede invocar desde el chat con `harness.run`
   o desde `POST /api/cowork/run`. Usa el perfil LLM actual, persiste trazas y
   reporta WEV/ELY. Harness² prueba cambios bajo un presupuesto pequeño y WEV;

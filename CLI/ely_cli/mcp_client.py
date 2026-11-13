@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import mcp
+from . import mcp, mcp_signatures
 
 PROTOCOL_VERSION = "2025-03-26"
 MAX_TOOL_RESULT = 14_000
@@ -42,6 +42,11 @@ def _manifest_servers(root: Path) -> list[tuple[Path, str, dict[str, Any]]]:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
+        if not isinstance(data, dict):
+            continue
+        signature_status = mcp_signatures.verify_manifest(root, data)
+        if not signature_status["valid"]:
+            continue
         block = next((data[k] for k in mcp.ROOT_KEYS if isinstance(data.get(k), dict)), None)
         if block is None and isinstance(data.get("command"), str):
             block = {data.get("id") or path.stem: data}
@@ -49,6 +54,8 @@ def _manifest_servers(root: Path) -> list[tuple[Path, str, dict[str, Any]]]:
             if not isinstance(raw_cfg, dict) or not raw_cfg.get("enabled", True):
                 continue
             cfg = dict(raw_cfg)
+            cfg["_ely_signature_verified"] = True
+            cfg["_ely_signature_status"] = signature_status["status"]
             # Third-party manifests use both MCP standard keys and editor-specific aliases.
             if not cfg.get("url") and isinstance(cfg.get("httpUrl"), str):
                 cfg["url"] = cfg["httpUrl"]

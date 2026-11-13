@@ -128,7 +128,8 @@ class MCPClientTest(unittest.TestCase):
             schemas = Engine(self.tmp)._tool_specs(get_agent("photon"))
             remote = next(item["function"] for item in schemas
                           if item["function"]["name"].startswith("mcp__"))
-            result = agent_tools.execute(self.tmp, remote["name"], {"text": "from-chat"})
+            result = agent_tools.execute(self.tmp, remote["name"], {"text": "from-chat"},
+                                         capabilities={"mcp.invoke"})
         self.assertTrue(result["ok"])
         self.assertEqual(result["content"], "echo:from-chat")
 

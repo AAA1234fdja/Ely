@@ -29,6 +29,28 @@ BLOCKED_ROOTS = {"ide/src", "ide/extensions"}
 SENSITIVE_NAMES = {".env", "keys.env", "secrets.json", "credentials.json", "id_rsa", "id_ed25519", ".npmrc", ".pypirc", "known_hosts"}
 SENSITIVE_MARKERS = ("secret", "credential", "private_key", "private-key")
 
+TOOL_CAPABILITIES = {
+    "workspace.list_files": "workspace.read",
+    "workspace.read_file": "workspace.read",
+    "workspace.search": "workspace.read",
+    "workspace.write_file": "workspace.write",
+    "workspace.run_command": "process.isolated",
+    "harness.run": "harness.execute",
+    "harness.set_token_target": "harness.configure",
+    "agent.spawn_subagent": "agent.delegate",
+    "laya.decide": "laya.recommend",
+}
+
+
+def required_capability(tool_name: str) -> str | None:
+    return "mcp.invoke" if tool_name.startswith("mcp__") else TOOL_CAPABILITIES.get(tool_name)
+
+
+def authorize_tool(tool_name: str, capabilities: set[str] | frozenset[str]) -> bool:
+    required = required_capability(tool_name)
+    return required is not None and required in capabilities
+
+
 TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "workspace.list_files": {
         "type": "function",
@@ -468,8 +490,12 @@ def _set_token_target(root: Path, arguments: dict[str, Any]) -> dict[str, Any]:
             "effective_from": "siguiente llamada LLM"}
 
 
-def execute(root: Path, name: str, arguments: Any, *, profile: Any = None, on_llm_call=None, engine: Any = None) -> dict[str, Any]:
-    """Ejecuta solo herramientas incluidas explícitamente en el catálogo."""
+def execute(root: Path, name: str, arguments: Any, *, profile: Any = None, on_llm_call=None,
+            engine: Any = None, capabilities: set[str] | frozenset[str] = frozenset()) -> dict[str, Any]:
+    """Dispatch only when the caller supplies the capability required by the tool."""
+    if not authorize_tool(name, capabilities):
+        required = required_capability(name)
+        return {"ok": False, "error": f"Capacidad no concedida: {required or 'desconocida'}"}
     if name.startswith("mcp__"):
         if not isinstance(arguments, dict):
             return {"ok": False, "error": "Los argumentos MCP deben ser un objeto JSON"}

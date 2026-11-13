@@ -1,0 +1,50 @@
+# Optional AppArmor profile for Ely's agent-issued command subprocesses.
+# Install as /etc/apparmor.d/ely-agent-sandbox and load with apparmor_parser.
+# Opt in per Ely process with ELY_SANDBOX_APPARMOR_PROFILE=ely-agent-sandbox.
+#include <tunables/global>
+
+profile ely-agent-sandbox flags=(attach_disconnected,mediate_deleted) {
+  # Path traversal is allowed; file reads and execution remain separately gated.
+  / x,
+  /tmp/ x,
+  /tmp/ely-agent-sandbox-*/ x,
+  /usr/**/ x,
+  /lib/**/ x,
+  /lib64/**/ x,
+  /workspace/ x,
+
+  # Executable and runtime files. Child commands remain in this same profile.
+  /usr/** r,
+  /usr/bin/{awk,bash,basename,bun,cat,cargo,chmod,clang,clang++,cmake,cp,curl,cut,date,diff,dirname,dotnet,env,false,file,find,fish,g++,gcc,git,go,grep,gzip,gunzip,head,javac,java,jq,kill,ln,ls,make,mkdir,mv,ninja,node,npm,npx,openssl,patch,perl,php,printf,ps,pwd,pwsh,powershell,python,python3,pytest,readlink,realpath,rm,rmdir,rg,rustc,sed,sh,sleep,sort,sqlite3,stat,tail,tar,tee,test,timeout,touch,tr,true,uniq,uname,unzip,wc,wget,which,xargs,yq,zsh} ix,
+  /usr/bin/{nodejs,python3.*} ix,
+  /usr/local/bin/{black,bun,cargo,cmake,isort,node,npm,npx,python,python3,python3.*,pytest,rustc} ix,
+  /usr/sbin/{cmake,dotnet,fish,pwsh} ix,
+  /usr/local/sbin/{cmake,dotnet,fish,pwsh} ix,
+  /bin/{bash,sh,dash,zsh,fish} ix,
+  /sbin/{true,false} ix,
+  /usr/lib/** mr,
+  /usr/local/lib/** mr,
+  /lib/** mr,
+  /lib64/** mr,
+  /etc/ld.so.cache r,
+  /etc/ld.so.preload r,
+  /etc/localtime r,
+
+  # The command sandbox receives a private snapshot under /tmp or /workspace.
+  owner /tmp/ely-agent-sandbox-*/ r,
+  owner /tmp/ely-agent-sandbox-*/workspace/ rw,
+  owner /tmp/ely-agent-sandbox-*/workspace/** rwk,
+  /workspace/ rw,
+  /workspace/** rwk,
+
+  # Loopback setup uses netlink; no Internet socket family is granted.
+  network netlink raw,
+
+  # Kernel interfaces and devices are denied even if another rule is added later.
+  deny /proc/** rwklx,
+  deny /sys/** rwklx,
+  deny /dev/** rwklx,
+  deny /**/.git/** rwklx,
+  deny /**/keys.env r,
+  deny /**/secrets.json r,
+}

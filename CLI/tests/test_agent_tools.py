@@ -13,6 +13,12 @@ from ely_cli import agent_tools, integrations, llm
 from ely_cli.engine import Engine
 
 
+def execute_with_capability(root, name, arguments, **kwargs):
+    capability = agent_tools.required_capability(name)
+    grants = {capability} if capability else set()
+    return agent_tools.execute(root, name, arguments, capabilities=grants, **kwargs)
+
+
 class WorkspaceToolsTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="ely-tools-"))
@@ -33,31 +39,47 @@ class WorkspaceToolsTest(unittest.TestCase):
         import shutil
         shutil.rmtree(self.tmp, ignore_errors=True)
 
+    def test_tool_execution_denies_missing_capability_before_side_effects(self):
+        result = agent_tools.execute(self.tmp, "workspace.write_file", {
+            "path": "src/unauthorized.py", "content": "nope"
+        })
+        self.assertFalse(result["ok"])
+        self.assertIn("workspace.write", result["error"])
+        self.assertFalse((self.tmp / "src" / "unauthorized.py").exists())
+
+    def test_tool_schemas_are_limited_by_agent_capabilities(self):
+        from ely_cli.agents import Agent
+        agent = Agent(id="limited", name="Limited", role="test", icon="x", color="#000", system="test",
+                      tools=["workspace.read_file", "workspace.write_file"],
+                      capabilities=["workspace.read"])
+        names = [item["function"]["name"] for item in Engine(self.tmp)._tool_specs(agent)]
+        self.assertEqual(names, ["workspace.read_file"])
+
     def test_read_and_search_visible_files(self):
-        read = agent_tools.execute(self.tmp, "workspace.read_file", {"path": "src/app.py"})
+        read = execute_with_capability(self.tmp, "workspace.read_file", {"path": "src/app.py"})
         self.assertTrue(read["ok"])
         self.assertIn("def hello", read["content"])
-        found = agent_tools.execute(self.tmp, "workspace.search", {"query": "hello"})
+        found = execute_with_capability(self.tmp, "workspace.search", {"query": "hello"})
         self.assertTrue(found["ok"])
         self.assertEqual(found["matches"][0]["path"], "src/app.py")
 
     def test_rejects_traversal_secrets_and_vendor_code(self):
         for path in ("../outside.txt", ".env", ".ely/keys.env", "IDE/src/vendor.js", "public.envlink"):
             with self.subTest(path=path):
-                result = agent_tools.execute(self.tmp, "workspace.read_file", {"path": path})
+                result = execute_with_capability(self.tmp, "workspace.read_file", {"path": path})
                 self.assertFalse(result["ok"])
 
     def test_list_excludes_private_and_vendor_paths(self):
-        result = agent_tools.execute(self.tmp, "workspace.list_files", {})
+        result = execute_with_capability(self.tmp, "workspace.list_files", {})
         self.assertEqual(result["files"], ["src/app.py"])
 
     def test_write_file_creates_and_keeps_previous_version(self):
-        first = agent_tools.execute(self.tmp, "workspace.write_file", {
+        first = execute_with_capability(self.tmp, "workspace.write_file", {
             "path": "src/new.py", "content": "print('one')\n"
         })
         self.assertTrue(first["ok"])
         self.assertTrue(first["created"])
-        second = agent_tools.execute(self.tmp, "workspace.write_file", {
+        second = execute_with_capability(self.tmp, "workspace.write_file", {
             "path": "src/new.py", "content": "print('two')\n"
         })
         self.assertTrue(second["ok"])
@@ -70,7 +92,7 @@ class WorkspaceToolsTest(unittest.TestCase):
     def test_write_file_rejects_sensitive_or_outside_paths(self):
         for path in ("../outside.py", ".env", "secrets.yaml", "IDE/src/vendor.py"):
             with self.subTest(path=path):
-                result = agent_tools.execute(self.tmp, "workspace.write_file", {"path": path, "content": "x"})
+                result = execute_with_capability(self.tmp, "workspace.write_file", {"path": path, "content": "x"})
                 self.assertFalse(result["ok"])
 
     def test_run_command_uses_isolation_and_reports_diff_without_applying(self):
@@ -78,7 +100,7 @@ class WorkspaceToolsTest(unittest.TestCase):
         isolated = {"ok": True, "code": 0, "stdout": "7 tests passed", "stderr": "",
                     "sandboxed": True, "mode": "workspace", "diff": "--- a/app.py", "changes_applied": False}
         with patch("ely_cli.command_sandbox.run", return_value=isolated) as runner:
-            result = agent_tools.execute(self.tmp, "workspace.run_command", {
+            result = execute_with_capability(self.tmp, "workspace.run_command", {
                 "command": "python -m pytest", "cwd": "src/nested"
             })
         self.assertTrue(result["ok"])
@@ -108,6 +130,7 @@ class WorkspaceToolsTest(unittest.TestCase):
         secret = str(self.tmp / ".ely" / "keys.env")
         result = run(self.tmp, f"cat {secret}; echo changed >> src/app.py", mode="workspace")
         self.assertTrue(result["sandboxed"])
+        self.assertTrue(result["executable_allowlist"])
         self.assertNotIn("secret", result["stdout"])
         self.assertIn("Permission denied", result["stderr"])
         self.assertIn("diff", result)
@@ -117,13 +140,13 @@ class WorkspaceToolsTest(unittest.TestCase):
     def test_run_command_rejects_traversal_and_private_cwd(self):
         for cwd in ("../", ".ely", "IDE/src"):
             with self.subTest(cwd=cwd):
-                result = agent_tools.execute(self.tmp, "workspace.run_command", {
+                result = execute_with_capability(self.tmp, "workspace.run_command", {
                     "command": "python -m pytest", "cwd": cwd
                 })
                 self.assertFalse(result["ok"])
 
     def test_unknown_tool_is_never_executed(self):
-        self.assertFalse(agent_tools.execute(self.tmp, "shell.exec", {"command": "id"})["ok"])
+        self.assertFalse(execute_with_capability(self.tmp, "shell.exec", {"command": "id"})["ok"])
 
     def test_spawn_subagent_receives_only_explicit_context_and_budget(self):
         from unittest.mock import Mock
@@ -132,7 +155,7 @@ class WorkspaceToolsTest(unittest.TestCase):
                  "partial": False, "profile": "active", "model": "m", "tools_used": ["workspace.read_file"]}
         engine = Mock()
         engine.ask.return_value = child
-        result = agent_tools.execute(self.tmp, "agent.spawn_subagent", {
+        result = execute_with_capability(self.tmp, "agent.spawn_subagent", {
             "role": "reviewer", "task": "Review this module", "files": ["src/app.py"], "budget_tokens": 512
         }, profile=profile, engine=engine)
         self.assertTrue(result["ok"])
@@ -151,11 +174,11 @@ class WorkspaceToolsTest(unittest.TestCase):
         codey = {x["function"]["name"] for x in agent_tools.schemas_for(get_agent("dev").tools)}
         self.assertIn("harness.set_token_target", photon)
         self.assertNotIn("harness.set_token_target", codey)
-        result = agent_tools.execute(self.tmp, "harness.set_token_target", {"desired_tokens": 2048})
+        result = execute_with_capability(self.tmp, "harness.set_token_target", {"desired_tokens": 2048})
         self.assertTrue(result["ok"])
         policy = json.loads((self.tmp / ".ely" / "harness-policy.json").read_text())
         self.assertEqual(policy["desired_tokens"], 2048)
-        invalid = agent_tools.execute(self.tmp, "harness.set_token_target", {"desired_tokens": 9999})
+        invalid = execute_with_capability(self.tmp, "harness.set_token_target", {"desired_tokens": 9999})
         self.assertFalse(invalid["ok"])
 
     def test_token_target_tool_applies_to_next_chat_round(self):
@@ -324,10 +347,13 @@ class ToolCallingProtocolTest(unittest.TestCase):
             messages = []
             observations = engine._append_tool_turn(messages, "", [{
                 "id": "c1", "name": "workspace.read_file", "arguments": {"path": "README.md"}
-            }])
+            }], capabilities={"workspace.read"})
             self.assertEqual(observations[0][0], "workspace.read_file")
             self.assertEqual(messages[-1]["role"], "tool")
-            self.assertIn("hello", json.loads(messages[-1]["content"])["content"])
+            envelope = json.loads(messages[-1]["content"])
+            self.assertEqual(envelope["_ely_trust"], "untrusted")
+            self.assertEqual(envelope["_ely_source"]["name"], "workspace.read_file")
+            self.assertIn("hello", envelope["result"]["content"])
 
     def test_engine_rejects_tools_not_assigned_to_agent(self):
         with tempfile.TemporaryDirectory(prefix="ely-engine-allowlist-") as directory:
@@ -339,7 +365,8 @@ class ToolCallingProtocolTest(unittest.TestCase):
                 "arguments": {"path": "should-not-exist.py", "content": "bad"}
             }], allowed_tools={"workspace.read_file"})
             result = json.loads(messages[-1]["content"])
-            self.assertFalse(result["ok"])
+            self.assertEqual(result["_ely_trust"], "untrusted")
+            self.assertFalse(result["result"]["ok"])
             self.assertFalse((root / "should-not-exist.py").exists())
 
     def test_streaming_chat_completes_tool_loop(self):
@@ -347,7 +374,7 @@ class ToolCallingProtocolTest(unittest.TestCase):
         profile = SimpleNamespace(id="test", provider="openai", model="test-model", endpoint=lambda: "http://test",
                                  masked_key="****", api_key="")
         agent = Agent(id="test", name="Test", role="test", icon="x", color="#000", system="test",
-                      tools=["workspace.read_file"])
+                      tools=["workspace.read_file"], capabilities=["workspace.read"])
         with tempfile.TemporaryDirectory(prefix="ely-engine-stream-") as directory:
             root = Path(directory)
             (root / "README.md").write_text("hello", encoding="utf-8")
@@ -382,7 +409,7 @@ class ToolCallingProtocolTest(unittest.TestCase):
             (root / "README.md").write_text("hello", encoding="utf-8")
             engine = Engine(root)
             agent = Agent(id="test", name="Test", role="test", icon="x", color="#000", system="test",
-                          tools=["workspace.read_file"])
+                          tools=["workspace.read_file"], capabilities=["workspace.read"])
             requests = []
 
             def complete(_profile, messages, **_kwargs):
@@ -396,6 +423,7 @@ class ToolCallingProtocolTest(unittest.TestCase):
             self.assertEqual(response["text"], "The file says hello.")
             self.assertEqual(response["tools_used"], ["workspace.read_file"])
             self.assertEqual(requests[1][-1]["role"], "tool")
+            self.assertEqual(json.loads(requests[1][-1]["content"])["_ely_trust"], "untrusted")
             self.assertIn("hello", requests[1][-1]["content"])
 
 

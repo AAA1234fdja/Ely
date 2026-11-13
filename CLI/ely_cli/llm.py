@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 import random
+import threading
+from collections import deque
 import socket
 import ssl
 import time
@@ -21,12 +23,38 @@ from .config import Profile
 USER_AGENT = "ElyCowork-CLI/0.9.0"
 MAX_RETRIES = 3
 RETRYABLE_HTTP = {429, 500, 502, 503, 504}
+_PROFILE_WINDOW_SECONDS = 60.0
+_PROFILE_LIMIT_LOCK = threading.Lock()
+_PROFILE_REQUESTS: dict[str, deque[float]] = {}
 
 
-def _open_with_retry(req: urllib.request.Request, timeout: int):
+def _acquire_profile_slot(profile: Profile) -> None:
+    """Apply a process-wide sliding-window request limit keyed by profile id."""
+    limit = getattr(profile, "requests_per_minute", 60)
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
+        raise ValueError("requests_per_minute debe ser un entero no negativo")
+    if limit == 0:
+        return  # explícitamente ilimitado
+    profile_id = str(getattr(profile, "id", "default"))
+    while True:
+        now = time.monotonic()
+        with _PROFILE_LIMIT_LOCK:
+            requests = _PROFILE_REQUESTS.setdefault(profile_id, deque())
+            while requests and now - requests[0] >= _PROFILE_WINDOW_SECONDS:
+                requests.popleft()
+            if len(requests) < limit:
+                requests.append(now)
+                return
+            delay = _PROFILE_WINDOW_SECONDS - (now - requests[0])
+        time.sleep(max(0.001, delay))
+
+
+def _open_with_retry(req: urllib.request.Request, timeout: int, profile: Profile | None = None):
     """Retry only transient connection/status failures, never auth or bad requests."""
     for attempt in range(MAX_RETRIES + 1):
         try:
+            if profile is not None:
+                _acquire_profile_slot(profile)
             return urllib.request.urlopen(req, timeout=timeout)
         except urllib.error.HTTPError as exc:
             if exc.code not in RETRYABLE_HTTP or attempt >= MAX_RETRIES:
@@ -268,7 +296,7 @@ def complete(
     req = _request(profile, payload, "application/json")
     started = time.monotonic()
     try:
-        with _open_with_retry(req, timeout=profile.timeout) as resp:
+        with _open_with_retry(req, timeout=profile.timeout, profile=profile) as resp:
             raw = resp.read()
     except urllib.error.HTTPError as exc:
         raise _explain_http_error(exc, exc.read()) from exc
@@ -365,7 +393,7 @@ def stream(
     openai_calls: dict[int, dict[str, Any]] = {}
     anthropic_calls: dict[int, dict[str, Any]] = {}
     try:
-        with _open_with_retry(req, timeout=profile.timeout) as resp:
+        with _open_with_retry(req, timeout=profile.timeout, profile=profile) as resp:
             for raw_line in resp:
                 line = raw_line.decode("utf-8", "replace").strip()
                 if not line or line.startswith(":") or not line.startswith("data:"):
@@ -469,6 +497,7 @@ def probe(profile: Profile, *, mode: str = "chat") -> dict[str, Any]:
             url = profile.base_url.rstrip("/") + "/models"
             base["url"] = url
             req = urllib.request.Request(url, headers={**_headers(profile), "Accept": "application/json"})
+            _acquire_profile_slot(profile)
             with urllib.request.urlopen(req, timeout=profile.timeout) as resp:
                 body = json.loads(resp.read() or b"{}")
             rows = body.get("data") or body.get("models") or []

@@ -134,6 +134,7 @@ class Profile:
     api_key: str | None = None
     color: str = "#8b9cff"
     timeout: int = 60
+    requests_per_minute: int = 60
     max_tokens: int = 1024
     temperature: float = 0.6
     headers: dict[str, str] = field(default_factory=dict)
@@ -180,6 +181,7 @@ class Profile:
             "masked_key": self.masked_key,
             "color": self.color,
             "timeout": self.timeout,
+            "requests_per_minute": self.requests_per_minute,
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
             "notes": self.notes,
@@ -200,6 +202,9 @@ def _profile_from_dict(raw: dict[str, Any], keys: dict[str, str], source: str) -
     for k, v in keys.items():
         env.setdefault(k.upper(), v)
     base_url = str(raw.get("base_url") or "")
+    rpm_raw = raw.get("requests_per_minute", 60)
+    if isinstance(rpm_raw, bool) or not isinstance(rpm_raw, int) or not 0 <= rpm_raw <= 100_000:
+        raise ConfigError(f"requests_per_minute inválido en perfil {pid}: usa un entero entre 0 y 100000")
 
     def fill(value: str) -> str:
         def repl(match: re.Match[str]) -> str:
@@ -217,6 +222,7 @@ def _profile_from_dict(raw: dict[str, Any], keys: dict[str, str], source: str) -
         api_key=api_key,
         color=str(raw.get("color") or "#8b9cff"),
         timeout=int(raw.get("timeout") or 60),
+        requests_per_minute=rpm_raw,
         max_tokens=int(raw.get("max_tokens") or 1024),
         temperature=float(raw.get("temperature") if raw.get("temperature") is not None else 0.6),
         headers=dict(raw.get("headers") or {}),
@@ -228,7 +234,7 @@ def _profile_from_dict(raw: dict[str, Any], keys: dict[str, str], source: str) -
 
 _KNOWN_PROFILE_KEYS = {
     "id", "label", "provider", "model", "base_url", "key_var", "api_key", "color",
-    "timeout", "max_tokens", "temperature", "headers", "notes",
+    "timeout", "requests_per_minute", "max_tokens", "temperature", "headers", "notes",
 }
 
 
