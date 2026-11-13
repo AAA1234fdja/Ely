@@ -91,7 +91,7 @@ BANNER = r"""
 
 def banner() -> None:
     print(violet(BANNER))
-    print(dim(f"  Cowork Agent OS · v{__version__} · Photon Labs\n"))
+    print(dim(f"  Ely Cowork · v{__version__} · Photon Labs\n"))
 
 
 # --------------------------------------------------------------------- comandos
@@ -884,7 +884,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ely",
-        description="Ely Cowork — Agent OS. CLI + IDE con API real por URL y API Key.",
+        description="Ely Cowork. CLI + IDE con API real por URL y API Key.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "ejemplos:\n"

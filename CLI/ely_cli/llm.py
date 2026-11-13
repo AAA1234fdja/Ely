@@ -190,6 +190,7 @@ def _anthropic_payload(
         if function.get("name"):
             overrides["tool_choice"] = {"type": "tool", "name": function["name"]}
 
+    prompt_cache = bool(overrides.pop("prompt_cache", False))
     body: dict[str, Any] = {
         "model": overrides.pop("model", profile.model),
         "messages": turns,
@@ -198,7 +199,8 @@ def _anthropic_payload(
         "max_tokens": overrides.pop("max_tokens", profile.max_tokens),
     }
     if system:
-        body["system"] = system
+        body["system"] = ([{"type": "text", "text": system,
+                            "cache_control": {"type": "ephemeral"}}] if prompt_cache else system)
     body.update(overrides)
     return body
 
@@ -206,6 +208,9 @@ def _anthropic_payload(
 def _payload(profile: Profile, messages: list[dict[str, Any]], stream: bool, **overrides: Any) -> dict[str, Any]:
     if profile.provider.lower() == "anthropic":
         return _anthropic_payload(profile, messages, stream, **overrides)
+    # OpenAI-compatible providers generally cache reusable prefixes implicitly;
+    # do not send a non-standard cache parameter on those APIs.
+    overrides.pop("prompt_cache", None)
     body: dict[str, Any] = {
         "model": overrides.pop("model", profile.model),
         "messages": messages,

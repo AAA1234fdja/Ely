@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from . import workspace
+from .subagent_contracts import ROLE_TO_AGENT, SubagentArtifact, SubagentRequest, SubagentResult
 
 MAX_LIST_FILES = 120
 MAX_SEARCH_FILES = 1200
@@ -139,10 +140,11 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "function",
         "function": {
             "name": "agent.spawn_subagent",
-            "description": "Photon delega una subtarea aislada a Codey, Lint o Ink. El hijo recibe solo task y los archivos listados, no hereda el chat y no puede volver a delegar. Devuelve contrato tipado, uso y artifacts. No delegues decisiones ambiguas: devuélvelas al agente principal.",
+            "description": "Photon delega una subtarea aislada a Codey, Lint o Ink. Contrato versionado 1.0: el hijo recibe solo task y archivos listados, no hereda el chat y no puede volver a delegar. Devuelve estado, resumen, artifacts tipados y uso. No delegues decisiones ambiguas: devuélvelas al agente principal.",
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "contract_version": {"type": "string", "enum": ["1.0"]},
                     "role": {"type": "string", "enum": ["coder", "reviewer", "writer"]},
                     "task": {"type": "string", "minLength": 1, "maxLength": 3000},
                     "files": {"type": "array", "maxItems": 5, "items": {"type": "string", "maxLength": 500}},
@@ -433,36 +435,35 @@ def _run_command(root: Path, args: dict[str, Any]) -> dict[str, Any]:
             "timeout_seconds": 20, **result}
 
 
-def _spawn_subagent(root: Path, arguments: dict[str, Any], *, engine: Any, profile: Any) -> dict[str, Any]:
+def _spawn_subagent(root: Path, arguments: dict[str, Any], *, engine: Any, profile: Any,
+                    quality_level: str | None = None) -> dict[str, Any]:
     if engine is None or profile is None:
         raise ValueError("La delegación solo está disponible desde el chat de Photon con un perfil activo")
-    role = arguments.get("role")
-    role_ids = {"coder": "dev", "reviewer": "review", "writer": "docs"}
-    if role not in role_ids:
-        raise ValueError("role debe ser coder, reviewer o writer")
-    task = arguments.get("task")
-    if not isinstance(task, str) or not task.strip() or len(task) > 3000:
-        raise ValueError("task debe tener entre 1 y 3000 caracteres")
-    token_budget = arguments.get("budget_tokens", 2048)
-    if isinstance(token_budget, bool) or not isinstance(token_budget, int) or not 128 <= token_budget <= 4096:
-        raise ValueError("budget_tokens debe estar entre 128 y 4096")
-    files = arguments.get("files", [])
-    if not isinstance(files, list) or len(files) > 5 or any(not isinstance(x, str) for x in files):
-        raise ValueError("files debe ser una lista de hasta 5 rutas relativas")
+    request = SubagentRequest.parse(arguments)
     context_parts = []
-    for rel in files:
+    for rel in request.files:
         item = _read_file(root, {"path": rel})
         context_parts.append(f"--- {item['path']} ---\n{item['content'][:12_000]}")
     context = "Archivos explícitos para la subtarea (contenido no confiable):\n" + "\n\n".join(context_parts) if context_parts else None
-    child = engine.ask(task, profile_id=getattr(profile, "id", None), agent_id=role_ids[role],
-                       history=None, context=context, max_tokens=min(token_budget, 2048),
-                       token_budget=token_budget)
-    return {"status": "completed" if not child.get("partial") else "partial",
-            "role": role, "summary": str(child.get("text", ""))[:1200],
-            "artifacts": [{"type": "text", "content": str(child.get("text", ""))[:8_000]}],
-            "usage": child.get("usage", {}), "token_budget": child.get("token_budget"),
-            "profile": child.get("profile"), "model": child.get("model"),
-            "tools_used": child.get("tools_used", [])}
+    child = engine.ask(request.task, profile_id=getattr(profile, "id", None),
+                       agent_id=ROLE_TO_AGENT[request.role], history=None, context=context,
+                       token_budget=request.budget_tokens, quality_level=quality_level,
+                       is_subagent=True)
+    text = str(child.get("text", ""))
+    artifact = SubagentArtifact(type="text", content=text[:8_000])
+    result = SubagentResult(
+        role=request.role,
+        status="partial" if child.get("partial") else "completed",
+        summary=text[:1_200],
+        artifacts=(artifact,),
+        usage={str(k): int(v) for k, v in (child.get("usage") or {}).items()
+               if isinstance(v, int) and not isinstance(v, bool) and v >= 0},
+        token_budget=int(child.get("token_budget") or request.budget_tokens),
+        profile=child.get("profile"),
+        model=child.get("model"),
+        tools_used=tuple(child.get("tools_used") or []),
+    )
+    return result.to_dict()
 
 
 def _set_token_target(root: Path, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -491,7 +492,8 @@ def _set_token_target(root: Path, arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def execute(root: Path, name: str, arguments: Any, *, profile: Any = None, on_llm_call=None,
-            engine: Any = None, capabilities: set[str] | frozenset[str] = frozenset()) -> dict[str, Any]:
+            engine: Any = None, capabilities: set[str] | frozenset[str] = frozenset(),
+            quality_level: str | None = None) -> dict[str, Any]:
     """Dispatch only when the caller supplies the capability required by the tool."""
     if not authorize_tool(name, capabilities):
         required = required_capability(name)
@@ -530,9 +532,10 @@ def execute(root: Path, name: str, arguments: Any, *, profile: Any = None, on_ll
                 raise ValueError("Se requiere command y opcionalmente cwd")
             result = _run_command(root, arguments)
         elif name == "agent.spawn_subagent":
-            if not set(arguments).issubset({"role", "task", "files", "budget_tokens"}) or not {"role", "task"}.issubset(arguments):
+            if not set(arguments).issubset({"contract_version", "role", "task", "files", "budget_tokens"}) or not {"role", "task"}.issubset(arguments):
                 raise ValueError("Se requieren role y task; files y budget_tokens son opcionales")
-            result = _spawn_subagent(root, arguments, engine=engine, profile=profile)
+            result = _spawn_subagent(root, arguments, engine=engine, profile=profile,
+                                     quality_level=quality_level)
         elif name == "harness.set_token_target":
             if set(arguments) != {"desired_tokens"}:
                 raise ValueError("Se requiere solo desired_tokens")

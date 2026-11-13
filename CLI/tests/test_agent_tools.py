@@ -157,15 +157,17 @@ class WorkspaceToolsTest(unittest.TestCase):
         engine.ask.return_value = child
         result = execute_with_capability(self.tmp, "agent.spawn_subagent", {
             "role": "reviewer", "task": "Review this module", "files": ["src/app.py"], "budget_tokens": 512
-        }, profile=profile, engine=engine)
+        }, profile=profile, engine=engine, quality_level="Hight")
         self.assertTrue(result["ok"])
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["artifacts"][0]["content"], "review summary")
         kwargs = engine.ask.call_args.kwargs
         self.assertIsNone(kwargs["history"])
         self.assertIn("src/app.py", kwargs["context"])
-        self.assertEqual(kwargs["max_tokens"], 512)
+        self.assertNotIn("max_tokens", kwargs)
         self.assertEqual(kwargs["token_budget"], 512)
+        self.assertEqual(kwargs["quality_level"], "Hight")
+        self.assertTrue(kwargs["is_subagent"])
         self.assertNotIn("agent.spawn_subagent", __import__("ely_cli.agents", fromlist=["get_agent"]).get_agent("review").tools)
 
     def test_only_photon_can_adjust_bounded_token_target(self):
@@ -200,7 +202,7 @@ class WorkspaceToolsTest(unittest.TestCase):
               patch("ely_cli.engine._task_tool_budget", return_value=(2, 4))):
             result = engine.ask("adjust tokens", agent_id="photon")
         self.assertEqual(result["text"], "done")
-        self.assertEqual(seen, [1024, 2048])
+        self.assertEqual(seen, [768, 1536])
 
     def test_total_token_budget_caps_each_round(self):
         engine = Engine(self.tmp)
@@ -335,6 +337,12 @@ class ToolCallingProtocolTest(unittest.TestCase):
         ]
         payload = llm._anthropic_payload(profile, messages, False, tools=agent_tools.schemas_for(["workspace.list_files"]), tool_choice="auto")
         self.assertEqual(payload["system"], "system")
+        cached = llm._anthropic_payload(profile, messages, False, prompt_cache=True)
+        self.assertEqual(cached["system"][0]["cache_control"], {"type": "ephemeral"})
+        self.assertNotIn("prompt_cache", cached)
+        compatible = SimpleNamespace(model="oai", temperature=0.2, max_tokens=100, provider="openai")
+        compat_payload = llm._payload(compatible, messages, False, prompt_cache=True)
+        self.assertNotIn("prompt_cache", compat_payload)
         self.assertEqual(payload["tools"][0]["name"], "workspace.list_files")
         self.assertEqual(payload["messages"][0]["content"][0]["type"], "tool_use")
         self.assertEqual(payload["messages"][1]["content"][0]["type"], "tool_result")

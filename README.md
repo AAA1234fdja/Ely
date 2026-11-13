@@ -1,6 +1,8 @@
-# Ely Cowork · Agent OS
+# Ely Cowork · espacio de trabajo con IA
 
 Interfaz y CLI para trabajar con agentes de IA mediante **URL + API Key** reales.
+
+[Guía de Ely Cowork en PDF](docs/guia-ely-cowork.pdf) · [Fuente editable](docs/guia-ely-cowork.md)
 El chat usa el proveedor elegido y puede invocar herramientas locales, corridas de
 Harness-Candy, decisiones tipadas locales con Laya y servidores MCP configurados;
 los resultados de cada herramienta vuelven al modelo antes de la respuesta final.
@@ -32,10 +34,10 @@ checkout ni convierten en capacidades de Ely el código upstream/vendorado de
 
 | Prioridad | Pendiente para competir en tareas de ingeniería | Estado verificable hoy |
 |---|---|---|
-| 1 | Bucle agéntico de herramientas: ejecutar, observar resultados y corregir sin abortar tareas largas. | Photon/Codey tienen tools locales y MCP configurado; Laya orienta al agente principal. Los presupuestos escalan por workspace/tests (5–12 rondas, 8–32 llamadas) y existe techo total por tarea (12 000 tokens por defecto); al agotarse se devuelve parcial. Photon puede delegar tareas acotadas a hijos tipados sin heredar el chat ni volver a delegar. Falta paralelismo seguro y memoria compartida por proyecto. |
+| 1 | Bucle agéntico de herramientas: ejecutar, observar resultados y corregir sin abortar tareas largas. | Photon/Codey tienen tools locales y MCP configurado; Laya orienta al agente principal. Las tareas usan contratos versionados para hijos, que reciben solo archivos explícitos y no heredan el chat ni pueden volver a delegar. Harness² administra esfuerzo, temperatura, tokens y prompt según el nivel de calidad ordenado; el contexto poda turnos antiguos y usa caché de prompt del proveedor cuando está soportada. Falta paralelismo seguro y memoria compartida por proyecto. Detalle: `CLI/security/HARNESS-RUNTIME.md`. |
 | 2 | Edición y ejecución con límites de seguridad explícitos. | Las herramientas de chat ejecutan en snapshot aislado; el sandbox Linux crea namespaces de usuario/PID/red, instala Landlock y un filtro seccomp-BPF (bloquea, entre otras, `ptrace`, `mount`, `setns` y `unshare`) antes del comando, además de aislar la red. `/proc`, `/sys` y `/dev` quedan bloqueados; Landlock permite ejecutar solo el intérprete de la tarea y binarios de una allowlist del sistema, no ejecutables generados en el workspace. No ven `.ely`, secretos ni archivos privados, y devuelven diff sin aplicarlo. Si no hay aislamiento compatible, falla cerrado. Hay un perfil AppArmor opt-in en `CLI/security/` (requiere instalación administrativa); SELinux aún no está integrado. Las salidas de herramientas se etiquetan como no confiables y se escanean con heurísticas de inyección antes de volver al modelo (solo alerta, no bloquea ni garantiza detección). En la terminal hay modos Solo lectura, Workspace aislado y Acceso total; este último exige confirmación por comando. | |
 | 3 | Cliente MCP funcional JSON-RPC (stdio/transportes soportados), con ciclo de vida y llamadas reales. | `mcp_client.py` inicia servidores stdio declarados y soporta Streamable HTTP; lista y ejecuta tools en el bucle de chat. El transporte SSE antiguo no está soportado; solo se conectan servidores explícitamente declarados y habilitados. |
-| 4 | Integrar DAG, WEV y Harness² como ejecutor configurable del chat. | `harness.run`/`POST /api/cowork/run` invocan `CoworkRunner` con el perfil activo. Harness² prueba candidatos con WEV bajo un presupuesto global pequeño; puede ajustar `max_tokens` gradualmente y proponer cambios de prompt/skills/guardrails. Photon puede editar el objetivo de tokens entre 128 y 4096, con techo global; los permisos de seguridad no son adaptables. El chat normal sigue disponible. |
+| 4 | Integrar DAG, WEV y Harness² como ejecutor configurable del chat. | `harness.run`/`POST /api/cowork/run` invocan `CoworkRunner` con el perfil activo. Harness² prueba candidatos con WEV bajo un presupuesto global pequeño; en el chat normal su runtime selecciona esfuerzo, temperatura, tokens y ajuste de prompt para agente e hijos según calidad. Photon puede editar el objetivo de tokens entre 128 y 4096, con techo global; los permisos de seguridad no son adaptables. |
 | 5 | Ejecutar y publicar resultados reproducibles de benchmarks externos con versiones, modelo, configuración y coste. | No se publican resultados de SWE-bench Verified ni Terminal-Bench para Ely. |
 
 Los fixtures locales `Harness-Candy/benchmarks/mini_mmlu.json` (10 casos) y

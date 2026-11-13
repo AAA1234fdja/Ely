@@ -11,7 +11,7 @@
     root.appendChild(UI.el("div", { class: "hero" }, [
       UI.el("h2", { text: "Dashboard" }),
       UI.el("p", {
-        html: "Agent OS local. La interfaz habla con el servidor Python, que firma cada petición con la clave del perfil activo. " +
+        html: "Ely Cowork es una interfaz local conectada al servidor Python; las peticiones usan la clave del perfil activo. " +
           "Sin respuestas simuladas: si el proveedor falla, lo verás aquí."
       }),
       UI.el("div", { class: "row" }, [

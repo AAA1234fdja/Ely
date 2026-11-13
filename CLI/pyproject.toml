@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ely-cowork"
 version = "0.9.0"
-description = "Ely Cowork — Agent OS: CLI + IDE con API real (URL + API Key)"
+description = "Ely Cowork: CLI + IDE con API real (URL + API Key)"
 readme = "../README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }

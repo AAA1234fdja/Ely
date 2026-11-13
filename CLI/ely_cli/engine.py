@@ -12,6 +12,7 @@ from . import agent_tools, key_pool, llm, mcp_client, quality
 from .agents import Agent, get_agent
 from .config import ConfigError, Profile, get_profile, load_profiles, repo_root, state_dir
 from .storage import ProfileStorage
+from .harness_runtime import Harness2Runtime, RuntimeDecision
 
 MAX_TOOL_ROUNDS = 5
 MAX_TOOL_CALLS = 8
@@ -66,9 +67,96 @@ def _now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+def _message_chars(message: dict[str, Any]) -> int:
+    return len(str(message.get("content", ""))) + len(json.dumps(message.get("tool_calls", []), ensure_ascii=False, default=str))
+
+
+def _clip_text(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    marker = "\n[… contexto recortado por el límite de contexto …]\n"
+    keep = max(0, limit - len(marker))
+    left = keep // 2
+    return text[:left] + marker + text[-(keep - left):] if keep > left else text[:limit]
+
+
+def prune_context_messages(messages: list[dict[str, Any]], context_token_budget: int) -> list[dict[str, Any]]:
+    """Prune oldest complete turns first, preserving system instructions and the latest turn."""
+    limit = max(1_024, int(context_token_budget)) * 4
+    systems = [dict(m) for m in messages if m.get("role") == "system"]
+    conversation = [dict(m) for m in messages if m.get("role") != "system"]
+    groups: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    for message in conversation:
+        if message.get("role") == "user" and current:
+            groups.append(current)
+            current = []
+        current.append(message)
+    if current:
+        groups.append(current)
+
+    def total_size(parts: list[dict[str, Any]], turns: list[list[dict[str, Any]]]) -> int:
+        return sum(_message_chars(m) for m in parts) + sum(_message_chars(m) for group in turns for m in group)
+
+    # Context attachments are the only system content eligible for clipping;
+    # agent and quality instructions remain intact.
+    for index, message in enumerate(systems):
+        content = str(message.get("content", ""))
+        if content.startswith("Contexto del proyecto proporcionado por el usuario:"):
+            over = total_size(systems, groups) - limit
+            if over > 0:
+                systems[index]["content"] = _clip_text(content, max(256, len(content) - over - 64))
+
+    selected: list[list[dict[str, Any]]] = []
+    for group in reversed(groups):
+        candidate = [group] + selected
+        if selected and total_size(systems, candidate) > limit:
+            continue
+        selected = candidate
+    result = systems + [m for group in selected for m in group]
+
+    # A single latest turn (e.g. several large tool outputs) can exceed the
+    # target by itself. Shrink oldest tool envelopes as JSON, never raw-slice
+    # the trust metadata or system instructions.
+    over = total_size(systems, selected) - limit
+    if over > 0:
+        for message in result:
+            if message.get("role") != "tool" or not isinstance(message.get("content"), str):
+                continue
+            try:
+                envelope = json.loads(message["content"])
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(envelope, dict) or envelope.get("_ely_trust") != "untrusted":
+                continue
+            result_value = json.dumps(envelope.get("result"), ensure_ascii=False, default=str)
+            reduction = min(max(0, len(result_value) - 128), over + 128)
+            if reduction:
+                envelope["result"] = {"truncated": True, "original_chars": len(result_value),
+                                      "preview": _clip_text(result_value, max(128, len(result_value) - reduction))}
+                message["content"] = json.dumps(envelope, ensure_ascii=False, default=str)
+                over = total_size(systems, selected) - limit
+                if over <= 0:
+                    break
+    over = total_size(systems, selected) - limit
+    if over > 0:
+        for message in reversed(result):
+            if message.get("role") != "user" or not isinstance(message.get("content"), str):
+                continue
+            content = message["content"]
+            new_limit = max(256, len(content) - over - 64)
+            if new_limit < len(content):
+                message["content"] = _clip_text(content, new_limit)
+                over = total_size(systems, selected) - limit
+            if over <= 0:
+                break
+    return result
+
+
 class Engine:
     def __init__(self, root: Path | None = None):
         self.root = root or repo_root()
+        self.harness_runtime = Harness2Runtime(quality.LEVELS)
 
     # ------------------------------------------------------------------ estado
     @property
@@ -146,6 +234,26 @@ class Engine:
             desired = default_tokens
         ceiling = min(4096, max(128, ceiling))
         return min(ceiling, max(128, desired))
+
+    def _runtime_decision(self, agent: Agent, profile: Profile, quality_level: str, *,
+                          max_tokens: int | None = None, temperature: float | None = None,
+                          token_budget: int | None = None, is_subagent: bool = False) -> RuntimeDecision:
+        policy = self._read_json("harness-policy.json", {})
+        policy_task_budget = policy.get("task_budget_tokens")
+        if isinstance(policy_task_budget, bool) or not isinstance(policy_task_budget, int):
+            policy_task_budget = None
+        requested_budget = token_budget if token_budget is not None else policy_task_budget
+        return self.harness_runtime.decide(
+            quality_level=quality_level,
+            agent_id=agent.id,
+            base_temperature=agent.temperature,
+            base_tokens=self.token_target(profile),
+            token_ceiling=self.token_ceiling(),
+            requested_max_tokens=max_tokens,
+            requested_temperature=temperature,
+            requested_task_budget=requested_budget,
+            is_subagent=is_subagent,
+        )
 
     def run_cowork(self, objective: str, *, profile_id: str | None = None, seed: int = 0) -> dict[str, Any]:
         from .integrations import run_harness_candy
@@ -250,6 +358,7 @@ class Engine:
         allowed_tools: set[str] | None = None,
         capabilities: set[str] | frozenset[str] = frozenset(),
         token_budget_remaining: int | None = None,
+        quality_level: str | None = None,
     ) -> list[tuple[str, dict[str, Any]]]:
         assistant_calls: list[dict[str, Any]] = []
         prepared: list[tuple[str, str, Any]] = []
@@ -283,7 +392,7 @@ class Engine:
                     tool_arguments["budget_tokens"] = min(requested if isinstance(requested, int) and not isinstance(requested, bool) else 2048, remaining)
                 result = agent_tools.execute(self.root, name, tool_arguments, profile=profile,
                                              on_llm_call=self.log_call, engine=self,
-                                             capabilities=capabilities)
+                                             capabilities=capabilities, quality_level=quality_level)
             child_usage = result.get("usage") if name == "agent.spawn_subagent" and result.get("ok") else None
             if remaining is not None and isinstance(child_usage, dict):
                 used = int(child_usage.get("total_tokens") or 0)
@@ -298,12 +407,13 @@ class Engine:
         history: list[dict[str, Any]] | None = None, context: str | None = None,
         max_tokens: int | None = None, temperature: float | None = None,
         token_budget: int | None = None, quality_level: str | None = None,
-        model: str | None = None,
+        model: str | None = None, is_subagent: bool = False,
     ) -> dict[str, Any]:
         with quality.task(self.root):
             return self._ask_impl(prompt, profile_id=profile_id, agent_id=agent_id, history=history,
                                   context=context, max_tokens=max_tokens, temperature=temperature,
-                                  token_budget=token_budget, quality_level=quality_level, model=model)
+                                  token_budget=token_budget, quality_level=quality_level, model=model,
+                                  is_subagent=is_subagent)
 
     def _ask_impl(
         self,
@@ -318,6 +428,7 @@ class Engine:
         token_budget: int | None = None,
         quality_level: str | None = None,
         model: str | None = None,
+        is_subagent: bool = False,
     ) -> dict[str, Any]:
         qcfg = quality.level_config(quality_level, self.root)
         active_quality = qcfg["id"]
@@ -327,14 +438,15 @@ class Engine:
                 raise ValueError("Modelo inválido")
             profile = replace(profile, model=model.strip())
         agent = get_agent(agent_id)
-        overrides: dict[str, Any] = {}
-        if max_tokens:
-            overrides["max_tokens"] = max_tokens
-        if temperature is not None:
-            overrides["temperature"] = temperature
+        runtime = self._runtime_decision(agent, profile, active_quality,
+                                         max_tokens=max_tokens, temperature=temperature,
+                                         token_budget=token_budget, is_subagent=is_subagent)
+        overrides: dict[str, Any] = {"max_tokens": runtime.max_tokens,
+                                     "temperature": runtime.temperature,
+                                     "prompt_cache": True}
         messages = self.build_messages(prompt, agent=agent, history=history, context=context)
         messages.insert(1 if messages and messages[0].get("role") == "system" else 0,
-                       {"role": "system", "content": self._quality_instruction(active_quality)})
+                       {"role": "system", "content": runtime.prompt_adjustment + "\n" + self._quality_instruction(active_quality)})
         tools = self._tool_specs(agent)
         allowed_tools = {item["function"]["name"] for item in tools}
         if tools:
@@ -347,11 +459,7 @@ class Engine:
         final_model = profile.model
         round_budget, call_budget = _task_tool_budget(self.root, prompt, context)
         round_budget = min(round_budget, qcfg["rounds"])
-        policy = self._read_json("harness-policy.json", {})
-        total_token_budget = token_budget if token_budget is not None else policy.get("task_budget_tokens", qcfg["tokens"])
-        if isinstance(total_token_budget, bool) or not isinstance(total_token_budget, int):
-            total_token_budget = 12000
-        total_token_budget = min(100000, max(128, total_token_budget))
+        total_token_budget = runtime.task_token_budget
         partial = False
         workspace_changed = False
         quality_result: dict[str, Any] | None = None
@@ -363,9 +471,14 @@ class Engine:
                 final_text = (final_text.rstrip() + "\n\n[Resultado parcial: se alcanzó el presupuesto total de tokens.]").strip()
                 break
             try:
+                round_runtime = self._runtime_decision(
+                    agent, profile, active_quality, max_tokens=max_tokens,
+                    temperature=temperature, token_budget=token_budget,
+                    is_subagent=is_subagent)
+                messages = prune_context_messages(messages, round_runtime.context_token_budget)
                 request_overrides = dict(overrides)
-                desired = self.token_target(profile) if max_tokens is None else min(self.token_target(profile), max(1, int(max_tokens)))
-                request_overrides["max_tokens"] = min(desired, remaining_tokens)
+                request_overrides["temperature"] = round_runtime.temperature
+                request_overrides["max_tokens"] = min(round_runtime.max_tokens, remaining_tokens)
                 profile, result = key_pool.complete(
                     self.root, profile, key_pool.role_for_agent(agent.id), messages, **request_overrides
                 )
@@ -397,7 +510,8 @@ class Engine:
             observations = self._append_tool_turn(messages, result.text, result.tool_calls,
                                                  profile=profile, allowed_tools=allowed_tools,
                                                  capabilities=frozenset(agent.capabilities),
-                                                 token_budget_remaining=remaining_for_tools)
+                                                 token_budget_remaining=remaining_for_tools,
+                                                 quality_level=active_quality)
             for used_name, tool_result in observations:
                 if used_name == "agent.spawn_subagent" and tool_result.get("ok"):
                     child_usage = tool_result.get("usage") or {}
@@ -432,6 +546,9 @@ class Engine:
             "partial": partial,
             "tool_budget": {"rounds": round_budget, "calls": call_budget},
             "token_budget": total_token_budget,
+            "runtime": {"effort": runtime.effort, "temperature": runtime.temperature,
+                        "max_tokens": runtime.max_tokens, "quality_index": runtime.quality_index,
+                        "context_token_budget": runtime.context_token_budget},
             "quality": quality_result,
             "quality_report": quality_text,
             "created_at": _now(),
@@ -467,9 +584,10 @@ class Engine:
                 raise ValueError("Modelo inválido")
             profile = replace(profile, model=model.strip())
         agent = get_agent(agent_id)
+        runtime = self._runtime_decision(agent, profile, active_quality)
         messages = self.build_messages(prompt, agent=agent, history=history, context=context)
         messages.insert(1 if messages and messages[0].get("role") == "system" else 0,
-                       {"role": "system", "content": self._quality_instruction(active_quality)})
+                       {"role": "system", "content": runtime.prompt_adjustment + "\n" + self._quality_instruction(active_quality)})
         tools = self._tool_specs(agent)
         allowed_tools = {item["function"]["name"] for item in tools}
         collected: list[str] = []
@@ -477,11 +595,7 @@ class Engine:
         tools_used: list[str] = []
         round_budget, call_budget = _task_tool_budget(self.root, prompt, context)
         round_budget = min(round_budget, qcfg["rounds"])
-        policy = self._read_json("harness-policy.json", {})
-        total_token_budget = policy.get("task_budget_tokens", qcfg["tokens"])
-        if isinstance(total_token_budget, bool) or not isinstance(total_token_budget, int):
-            total_token_budget = 12000
-        total_token_budget = min(100000, max(128, total_token_budget))
+        total_token_budget = runtime.task_token_budget
         last_call_id = ""
         workspace_changed = False
         quality_result: dict[str, Any] | None = None
@@ -495,6 +609,8 @@ class Engine:
             "key": profile.masked_key,
             "test_key": bool(profile.api_key and profile.api_key.startswith("APikeyexample-")),
             "tools_enabled": bool(tools),
+            "runtime": {"effort": runtime.effort, "temperature": runtime.temperature,
+                        "max_tokens": runtime.max_tokens, "context_token_budget": runtime.context_token_budget},
         }
 
         for round_index in range(round_budget + 1):
@@ -514,7 +630,10 @@ class Engine:
                        "quality": quality_result, "quality_report": quality_text,
                        "token_budget": total_token_budget}
                 return
-            stream_args = {"max_tokens": min(self.token_target(profile), remaining_tokens)}
+            round_runtime = self._runtime_decision(agent, profile, active_quality)
+            messages = prune_context_messages(messages, round_runtime.context_token_budget)
+            stream_args = {"max_tokens": min(round_runtime.max_tokens, remaining_tokens),
+                           "temperature": round_runtime.temperature, "prompt_cache": True}
             if tools:
                 stream_args.update({"tools": tools, "tool_choice": "auto"})
             round_text: list[str] = []
@@ -636,7 +755,7 @@ class Engine:
                                                          remaining_for_child)
                     result = agent_tools.execute(self.root, name, arguments, profile=profile,
                                                  on_llm_call=self.log_call, engine=self,
-                                                 capabilities=capabilities)
+                                                 capabilities=capabilities, quality_level=active_quality)
                 if name == "workspace.write_file" and result.get("ok"):
                     round_changed = True
                     if result.get("path"):
