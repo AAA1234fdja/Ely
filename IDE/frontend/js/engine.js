@@ -68,11 +68,22 @@
 
   async function stream(path, body, handlers) {
     const h = handlers || {};
-    const response = await fetch("/api" + path, {
+    const profileId = body && (body.profile || body.profile_id);
+    const apiName = path === "/chat/stream" ? "chat" : path;
+    const recordWork = (ok) => {
+      if (window.App && typeof window.App.recordApiWork === "function") window.App.recordApiWork(profileId, ok, apiName);
+    };
+    let response;
+    try {
+      response = await fetch("/api" + path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
-    });
+      });
+    } catch (err) {
+      recordWork(false);
+      throw err;
+    }
     if (!response.ok) {
       let message = response.statusText;
       let detail = null;
@@ -81,9 +92,13 @@
         message = data.error || message;
         detail = data.detail;
       } catch (e) { /* cuerpo no JSON */ }
+      recordWork(false);
       throw new ApiError(message, response.status, detail);
     }
-    if (!response.body) throw new ApiError("Este navegador no soporta streaming (ReadableStream)", 0);
+    if (!response.body) {
+      recordWork(false);
+      throw new ApiError("Este navegador no soporta streaming (ReadableStream)", 0);
+    }
 
     const reader = response.body.getReader();
     const decoder = typeof TextDecoder === "function" ? new TextDecoder() : null;
@@ -93,6 +108,7 @@
       try {
         chunk = await reader.read();
       } catch (err) {
+        recordWork(false);
         if (h.onError) h.onError(new ApiError("El flujo se interrumpió: " + err.message, 0));
         return;
       }
@@ -111,9 +127,14 @@
         }
         if (event.type === "delta") h.onDelta && h.onDelta(event.text);
         else if (event.type === "usage") h.onUsage && h.onUsage(event.usage);
+        else if (event.type === "tool") h.onTool && h.onTool(event);
         else if (event.type === "start") h.onStart && h.onStart(event);
-        else if (event.type === "done") h.onDone && h.onDone(event);
+        else if (event.type === "done") {
+          recordWork(true);
+          h.onDone && h.onDone(event);
+        }
         else if (event.type === "error") {
+          recordWork(false);
           h.onError && h.onError(new ApiError(event.message, event.status, event.detail));
           return;
         }
@@ -177,7 +198,19 @@
     memory: () => request("/memory"),
     addMemory: (text, tag) => request("/memory", { method: "POST", body: { text, tag } }),
     deleteMemory: (id) => request("/memory/" + encodeURIComponent(id), { method: "DELETE" }),
-    runWorkflow: (id, input) => request("/workflows/run", { method: "POST", body: { id, input } }),
+    runWorkflow: async (id, input, assignedProfile) => {
+      const profileId = assignedProfile || (window.App && App.profileId()) || Store.get("profile");
+      try {
+        const result = await request("/workflows/run", {
+          method: "POST", body: { id, input, profile: profileId }
+        });
+        if (window.App && typeof App.recordApiWork === "function") App.recordApiWork(result.profile || profileId, true, "workflow");
+        return result;
+      } catch (err) {
+        if (window.App && typeof App.recordApiWork === "function") App.recordApiWork(profileId, false, "workflow");
+        throw err;
+      }
+    },
     tree: (depth) => request("/workspace/tree?depth=" + (depth || 3)),
     file: (path) => request("/workspace/file?path=" + encodeURIComponent(path)),
     saveFile: (path, content) => request("/workspace/file", { method: "POST", body: { path, content } }),

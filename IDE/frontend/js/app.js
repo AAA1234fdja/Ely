@@ -124,6 +124,38 @@
       this.renderHeader();
     },
 
+    /* Salud derivada del trabajo real asignado a cada perfil. Se conserva
+       durante cinco horas; no dispara sondeos ajenos a la actividad. */
+    recordApiWork(profileId, ok, apiName) {
+      if (!profileId) return;
+      let checks = {};
+      try { checks = JSON.parse(localStorage.getItem("ely.apiWorkChecks") || "{}"); } catch (e) { /* estado corrupto */ }
+      if (!checks[profileId] || typeof checks[profileId] !== "object" || Array.isArray(checks[profileId])) checks[profileId] = {};
+      checks[profileId][apiName || "work"] = { ok: Boolean(ok), at: Date.now() };
+      try { localStorage.setItem("ely.apiWorkChecks", JSON.stringify(checks)); } catch (e) { /* almacenamiento no disponible */ }
+      this.apiWorkChecks = checks;
+      this.renderHeader();
+    },
+
+    apiWorkHealth() {
+      let checks = this.apiWorkChecks;
+      if (!checks) {
+        try { checks = JSON.parse(localStorage.getItem("ely.apiWorkChecks") || "{}"); } catch (e) { checks = {}; }
+        this.apiWorkChecks = checks;
+      }
+      /* Usa exclusivamente el perfil activo configurado en Ely Cowork. */
+      const profileChecks = checks[this.profileId()];
+      const cutoff = Date.now() - 5 * 60 * 60 * 1000;
+      const values = profileChecks && typeof profileChecks === "object"
+        ? (typeof profileChecks.ok === "boolean" ? [profileChecks] : Object.values(profileChecks)) : [];
+      const recent = values.filter((item) => item && item.at >= cutoff && typeof item.ok === "boolean");
+      if (!recent.length) return { state: "idle", title: t("header.apiHealthIdle") };
+      const passed = recent.filter((item) => item.ok).length;
+      if (!passed) return { state: "down", title: t("header.apiHealthNone") };
+      if (passed < recent.length) return { state: "partial", title: t("header.apiHealthSome") };
+      return { state: "ok", title: t("header.apiHealthAll") };
+    },
+
     /* ---------------------------------------------------------- datos */
     async refresh() {
       const state = await Engine.load(true);
@@ -168,99 +200,33 @@
       const header = UI.$("header.top");
       if (!header) return;
       UI.clear(header);
-      const entry = TITLES[this.route] || ["Ely Cowork", ""];
-      const profile = this.profile();
-      const subtitle = window.I18N && t("navdesc." + this.route) !== "navdesc." + this.route ? t("navdesc." + this.route) : entry[1];
-
-      header.appendChild(UI.el("button", {
-        class: "icon-btn", id: "nav-toggle", html: "☰", title: t("header.menu"),
-        onclick: () => document.body.classList.toggle("nav-open")
-      }));
-
-      header.appendChild(UI.el("div", { class: "page" }, [
-        UI.el("div", {
-          class: "crumbs",
-          text: "ELY COWORK V" + (this.health ? this.health.version : "0.9.0")
-        }),
-        UI.el("h1", { text: entry[0] }),
-        subtitle ? UI.el("div", { class: "crumbs", style: { opacity: 0.7 }, text: subtitle }) : null
-      ]));
-
-      header.appendChild(UI.el("div", { class: "spacer" }));
-
-      const pills = UI.el("div", { class: "row", style: { gap: "6px", flexWrap: "nowrap" } });
-
-      /* workflow activo */
-      const flowPill = UI.el("div", { class: "status-pill click", title: t("header.activeFlow") }, [
-        UI.el("span", { class: "muted", text: "⊟" }),
-        UI.el("span", { class: "trunc", style: { maxWidth: "148px" }, text: this.activeFlowLabel() })
+      const pills = UI.el("div", { class: "row cowork-header-items", style: { gap: "8px", flexWrap: "nowrap" } });
+      const flowPill = UI.el("button", { class: "status-pill click", type: "button", title: t("header.activeFlow"), onclick: () => this.navigate("workflows") }, [
+        UI.el("span", { class: "muted", text: "⊟", "aria-hidden": "true" }),
+        UI.el("span", { class: "trunc", style: { maxWidth: "200px" }, text: this.activeFlowLabel() })
       ]);
-      flowPill.addEventListener("click", () => this.navigate("workflows"));
       pills.appendChild(flowPill);
 
-      /* salud del backend */
-      const connected = Boolean(this.health && this.health.ok);
-      pills.appendChild(UI.el("div", { class: "status-pill" }, [
-        UI.el("span", { class: "dot" + (connected ? "" : " off") }),
-        UI.el("span", { text: connected ? t("header.trust") : t("header.serverDown") })
-      ]));
-
-      /* perfil activo (real) */
-      const select = UI.el("select", {
-        onchange: (event) => this.setProfile(event.target.value)
-      }, this.profiles.map((p) => UI.el("option", {
-        value: p.id, selected: profile && p.id === profile.id,
-        text: p.label + (p.has_key ? "" : " · sin clave")
-      })));
-      if (!this.profiles.length) select.appendChild(UI.el("option", { text: t("header.noProfiles") }));
-      pills.appendChild(UI.el("div", { class: "status-pill" }, [
-        UI.el("span", { class: "muted", text: t("header.profile") }),
-        select
-      ]));
-
-      /* estado de la clave */
-      const keyState = !profile ? t("header.noProfile")
-        : !profile.has_key ? t("header.noKey")
-        : profile.is_test_key ? t("header.testKey") : t("header.ownKey");
+      const health = this.apiWorkHealth();
       pills.appendChild(UI.el("div", {
-        class: "status-pill",
-        title: profile ? profile.key_var + " · " + (profile.masked_key || "sin valor") : ""
+        class: "status-pill api-work-health api-work-health-" + health.state,
+        title: health.title,
+        role: "status",
+        "aria-label": t("header.testKey") + ": " + health.title
       }, [
-        UI.el("span", { class: "dot" + (keyState === "sin clave" ? " off" : keyState === "clave de prueba" ? " warn" : "") }),
-        UI.el("span", { text: keyState })
+        UI.el("span", { class: "api-work-health-dot", "aria-hidden": "true" }),
+        UI.el("span", { text: t("header.testKey") })
       ]));
 
-      /* probar conexión */
-      const testBtn = UI.el("button", { class: "icon-btn", html: "▷", title: t("header.testConn") });
-      testBtn.addEventListener("click", async () => {
-        testBtn.disabled = true;
-        try {
-          const result = await API.testProfile(this.profileId(), "chat");
-          if (result.ok) UI.toast("ok", t("conn.verified"), result.detail + " · " + result.latency_ms + " ms");
-          else if (result.reachable) UI.toast("warn", t("conn.reachable"), "HTTP " + result.status + " — " + result.detail);
-          else UI.toast("err", t("conn.noResponse"), result.detail);
-          if (this.route === "integrations" || this.route === "dashboard") this.render();
-        } catch (err) {
-          UI.toast("err", t("conn.failed"), err.message);
-        }
-        testBtn.disabled = false;
-      });
-      pills.appendChild(testBtn);
-
       pills.appendChild(UI.el("button", {
-        class: "icon-btn", html: "⚙", title: t("header.settings"),
-        onclick: () => Settings.openModal(this)
+        class: "icon-btn", type: "button", html: "⚙", title: t("header.settings"),
+        "aria-label": t("header.settings"), onclick: () => Settings.openModal(this, "cowork")
       }));
 
       pills.appendChild(UI.el("button", {
-        class: "icon-btn", html: "◔", title: t("header.calls"),
-        onclick: () => this.navigate("jobs")
+        class: "icon-btn", type: "button", html: "◔", title: t("header.scheduledJobs"),
+        "aria-label": t("header.scheduledJobs"), onclick: () => this.navigate("jobs")
       }));
-
-      pills.appendChild(UI.el("div", { class: "status-pill click", title: t("header.localSession"), onclick: () => this.navigate("config") }, [
-        UI.el("span", { text: t("header.operator") })
-      ]));
-
       header.appendChild(pills);
     },
 
@@ -270,6 +236,13 @@
       if (!nav) return;
       UI.clear(nav);
       const groupKey = { "Desarrollo": "nav.desarrollo", "Orquestación": "nav.orquestacion", "Operaciones": "nav.operaciones", "Inspección": "nav.inspeccion" };
+      const cliLink = UI.el("a", {
+        class: "nav-cli" + (this.route === "chat" ? " active" : ""),
+        href: "#/chat",
+        title: "CLI",
+        "aria-label": "CLI · chat",
+        "data-nav-cli": ""
+      }, [UI.el("span", { class: "nav-title", text: "CLI" })]);
       NAV.forEach((group) => {
         const gLabel = window.I18N ? t(groupKey[group.group] || group.group) : group.group;
         nav.appendChild(UI.el("div", { class: "nav-group" }, [UI.el("span", { text: gLabel })]));
@@ -290,12 +263,51 @@
             link.appendChild(UI.el("span", { class: "badge-dot", text: this.memoryCount }));
           }
           nav.appendChild(link);
+          if (item.id === "ide") nav.appendChild(cliLink);
         });
       });
+
+      /* Si otra vista de la aplicación está activa, conserva un tercer acceso
+         al contraer el menú. CLI e IDE ya tienen su acceso fijo y no se duplican. */
+      const currentNav = NAV.flatMap((group) => group.items || []).find((item) => item.id === this.route);
+      if (currentNav && currentNav.id !== "ide") {
+        nav.appendChild(UI.el("a", {
+          class: "nav-current-view active",
+          href: "#/" + currentNav.id,
+          title: currentNav.label,
+          "aria-label": currentNav.label,
+          "aria-current": "page",
+          "data-nav-current": ""
+        }, [UI.el("span", { class: "nav-title nav-current-icon", text: currentNav.icon || currentNav.label.slice(0, 1) })]));
+      }
+      this.renderSidebarSettings();
+    },
+
+    renderSidebarSettings() {
+      const footer = UI.$("#sidebar-settings");
+      if (!footer) return;
+      const isCli = this.route === "chat";
+      footer.hidden = isCli;
+      UI.clear(footer);
+      if (isCli) return; // CLI tiene su propio pie en la barra lateral del chat.
+      const scope = "cowork";
+      const label = t("set.title") + " · Ely Cowork";
+      const button = UI.el("button", {
+        class: "sidebar-settings-button",
+        type: "button",
+        title: label,
+        "aria-label": label
+      }, [
+        UI.el("span", { class: "vsc-codicon codicon-gear", "aria-hidden": "true" }),
+        UI.el("span", { class: "sidebar-settings-label", text: label })
+      ]);
+      button.addEventListener("click", () => Settings.openModal(this, scope));
+      footer.appendChild(button);
     },
 
     /* ---------------------------------------------------------- router */
     render() {
+      if (window.Settings) Settings.apply();
       this.renderNav();
       this.renderHeader();
       /* El botón flotante sobra cuando ya estás en el chat. */
@@ -410,8 +422,39 @@
       const side = document.querySelector("aside");
       if (side) {
         const collapse = side.querySelector(".collapse");
-        if (collapse) collapse.addEventListener("click", () => document.body.classList.toggle("collapsed"));
+        if (collapse) collapse.addEventListener("click", () => {
+          document.body.classList.toggle("collapsed");
+          if (window.Settings) Settings.apply();
+        });
+        side.appendChild(UI.el("div", { class: "sidebar-footer", id: "sidebar-settings" }));
       }
+      let sidebarHidden = false;
+      try { sidebarHidden = localStorage.getItem("ely.cowork.sidebarHidden") === "1"; } catch (e) { /* noop */ }
+      const sidebarPeek = UI.el("button", {
+        id: "sidebar-peek",
+        class: "sidebar-peek",
+        type: "button",
+        onclick: () => {
+          sidebarHidden = !sidebarHidden;
+          document.body.classList.toggle("sidebar-hidden", sidebarHidden);
+          if (sidebarHidden) document.body.classList.remove("nav-open");
+          else if (window.innerWidth <= 880) document.body.classList.add("nav-open");
+          try { localStorage.setItem("ely.cowork.sidebarHidden", sidebarHidden ? "1" : "0"); } catch (e) { /* noop */ }
+          updateSidebarPeek();
+          if (window.Settings) Settings.apply();
+        }
+      });
+      const updateSidebarPeek = () => {
+        sidebarPeek.textContent = sidebarHidden ? "›" : "‹";
+        const label = t(sidebarHidden ? "app.showSidebar" : "app.hideSidebar");
+        sidebarPeek.title = label;
+        sidebarPeek.setAttribute("aria-label", label);
+        sidebarPeek.setAttribute("aria-expanded", sidebarHidden ? "false" : "true");
+      };
+      document.body.classList.toggle("sidebar-hidden", sidebarHidden);
+      document.body.appendChild(sidebarPeek);
+      updateSidebarPeek();
+      if (window.Settings) Settings.apply();
       /* El chat ya no se abre desde la tarjeta Photon de la barra lateral
          (oculta por CSS): botón flotante verde abajo a la derecha. Se crea
          en tiempo de ejecución, como #toasts, sin tocar el HTML base. */
@@ -433,6 +476,7 @@
       document.head.appendChild(ws);
 
       this.route = (location.hash || "#/dashboard").replace("#/", "");
+      this.renderSidebarSettings();
       window.addEventListener("hashchange", () => {
         const next = (location.hash || "#/dashboard").replace("#/", "");
         if (next === "chat" && this.route !== "chat") this.routeBeforeChat = this.route;
@@ -440,10 +484,12 @@
         document.body.classList.remove("nav-open");
         this.render();
       });
+      window.addEventListener("resize", () => { if (window.Settings) Settings.apply(); });
       document.addEventListener("keydown", (event) => {
         if ((event.metaKey || event.ctrlKey) && event.key === ",") {
           event.preventDefault();
-          Settings.openModal(this);
+          const scope = this.route === "ide" ? "ide" : this.route === "chat" ? "cli" : "cowork";
+          Settings.openModal(this, scope);
         }
       });
 
@@ -469,6 +515,7 @@
 
       setInterval(() => {
         if (document.hidden) return;
+        this.renderHeader(); // expira el estado API al superar las cinco horas.
         API.health().catch(() => {});
       }, 60000);
     }

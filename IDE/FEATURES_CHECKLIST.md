@@ -599,10 +599,10 @@ marketplace de extensiones no se simulan en web; quedan pendientes de un backend
 - ✅ **532.** Cada opción muestra **autónimo + nombre en inglés** (`Deutsch · German`, `日本語 · Japanese`) con `aria-label`
 - ✅+🔌 **533.** Paquetes **bajo demanda**: elegir japonés descarga sólo `js/locales/ja.js`, no los doce
 - ✅ **534.** Cambio **sin parpadeo**: se carga el paquete antes de aplicar el idioma
-- ✅ **535.** **745 entradas por paquete** (diccionario completo) en los 12 idiomas que no son base — 8.940 cadenas traducidas
+- ✅ **535.** **747 entradas por paquete** (diccionario completo) en los 12 idiomas que no son base — 8.964 cadenas traducidas
 - ✅ **536.** **37 patrones dinámicos** traducidos con sus marcadores (`vor 5 Min.`, `5 分前`, `5 мин назад`), no sólo palabras sueltas
 - ✅ **537.** Cadena de fallback **paquete → inglés → español**: un usuario japonés nunca ve texto en español
-- ✅ **538.** Ajustes muestra la **cobertura real** (`745/745 · 100 %`); el aviso «lo que falte se muestra en inglés» sólo aparece si un paquete queda incompleto
+- ✅ **538.** Ajustes muestra la **cobertura real** (`747/747 · 100 %`); el aviso «lo que falte se muestra en inglés» sólo aparece si un paquete queda incompleto
 - ✅ **539.** `<html lang>` sincronizado en todos los caminos de cambio (Ajustes, `setLang`, carga del paquete)
 - ✅ **540.** **Latín** marcado como experimental, con el léxico de la Vicipaedia (`lima`, `theca`, `inceptum`, `persona`)
 - ✅ **541.** **Vendergood** entregado y marcado como lengua construida: aproximación documentada desde su base latina/romance, **no presentada como atestiguada**, con `html lang="art-x-vendergood"`
@@ -611,7 +611,7 @@ marketplace de extensiones no se simulan en web; quedan pendientes de un backend
 - ✅+🔌 **544.** Extensiones: `l10n` del manifiesto acepta **cualquier idioma** y `ely.l10n()` admite **mapa por idioma** con fallback a inglés
 - ✅ **545.** El idioma llega a las extensiones en caliente (`ely:langchange` → `ely.env.language`)
 - ✅ **546.** Auditoría real en los 14 idiomas: **0 textos en español** en en/el/ru/hi/zh/ja; en el resto, sólo falsos positivos del detector revisados uno a uno
-- ✅ **547.** Cobertura del **100 %** del diccionario (**745/745**) en los **12** idiomas: accesibilidad (120), IDE (60), chat y almacén (56), descripciones y extensiones (38), visores (15), patrones (37) y avisos (4)
+- ✅ **547.** Cobertura del **100 %** del diccionario (**747/747**) en los **12** idiomas: accesibilidad (120), IDE (60), chat y almacén (56), descripciones y extensiones (38), visores (15), patrones (37), avisos (4) y escala de interfaz (2)
 - ⛔ **548.** Vendergood **atestiguado**: no hay corpus público del *Book of Vendergood*; el paquete es una aproximación explícita
 - ✅ **549.** Los atajos se rotulan como el **teclado de cada idioma** (`Strg`/`Umschalt` en alemán, `Maj`/`Échap` en francés, `Invio` en italiano), como VS Code
-- ✅ **550.** Tests que impiden perder cobertura: 745 claves exactas, marcadores `$1`/`{n}`, marcado `<b>` en línea, literales técnicos (`.ely/tasks.json`, `network:<host>`, `planeado/`), cifras y escritura propia de cada alfabeto
+- ✅ **550.** Tests que impiden perder cobertura: 747 claves exactas, marcadores `$1`/`{n}`, marcado `<b>` en línea, literales técnicos (`.ely/tasks.json`, `network:<host>`, `planeado/`), cifras y escritura propia de cada alfabeto

@@ -198,6 +198,17 @@ Nuevos módulos de la expansión (stdlib-only):
   latencia.py   bench de latencia con percentiles p50/p90/p95/p99
 ```
 
+### Alcance de las suites locales (no son benchmarks oficiales)
+
+`benchmarks/mini_mmlu.json` contiene 10 casos pequeños de opción múltiple y
+`benchmarks/swe_mini.json` contiene 4 tareas de código locales inspiradas en el
+estilo SWE-bench. Son fixtures de smoke/demo para probar el harness, no los
+datasets oficiales MMLU o SWE-bench Verified, no implementan sus protocolos de
+evaluación y no producen puntuaciones comparables. Tampoco son una ejecución de
+Terminal-Bench. Publicar un resultado oficial requiere descargar/usar el dataset
+autorizado, fijar el harness y la versión del modelo, correr sus gates y conservar
+un reporte reproducible; este repositorio no afirma haberlo hecho.
+
 El servidor expone además `GET /compare?a=<run>&b=<run>` (delta de Q y métricas
 entre dos corridas).
 

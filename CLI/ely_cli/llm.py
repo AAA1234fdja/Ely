@@ -48,6 +48,7 @@ class LLMResult:
     model: str = ""
     usage: Usage = field(default_factory=Usage)
     raw: dict[str, Any] | None = None
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _headers(profile: Profile) -> dict[str, str]:
@@ -68,11 +69,69 @@ def _headers(profile: Profile) -> dict[str, str]:
 
 
 def _anthropic_payload(
-    profile: Profile, messages: list[dict[str, str]], stream: bool, **overrides: Any
+    profile: Profile, messages: list[dict[str, Any]], stream: bool, **overrides: Any
 ) -> dict[str, Any]:
-    """Anthropic Messages API: el system prompt va aparte y max_tokens es obligatorio."""
-    system = "\n".join(m["content"] for m in messages if m.get("role") == "system")
-    turns = [m for m in messages if m.get("role") != "system"]
+    """Adapta mensajes y herramientas al formato Messages API de Anthropic."""
+    system = "\n".join(str(m["content"]) for m in messages if m.get("role") == "system")
+    turns: list[dict[str, Any]] = []
+    for message in messages:
+        role = message.get("role")
+        if role == "system":
+            continue
+        if role == "assistant" and message.get("tool_calls"):
+            blocks: list[dict[str, Any]] = []
+            content = message.get("content")
+            if isinstance(content, str) and content:
+                blocks.append({"type": "text", "text": content})
+            for call in message.get("tool_calls") or []:
+                function = call.get("function") or {}
+                arguments = function.get("arguments", {})
+                if isinstance(arguments, str):
+                    try:
+                        arguments = json.loads(arguments)
+                    except json.JSONDecodeError:
+                        arguments = {}
+                blocks.append({
+                    "type": "tool_use",
+                    "id": call.get("id") or "toolu-ely",
+                    "name": function.get("name", ""),
+                    "input": arguments if isinstance(arguments, dict) else {},
+                })
+            turns.append({"role": "assistant", "content": blocks})
+        elif role == "tool":
+            block = {
+                "type": "tool_result",
+                "tool_use_id": message.get("tool_call_id", ""),
+                "content": str(message.get("content", "")),
+            }
+            if turns and turns[-1].get("role") == "user" and isinstance(turns[-1].get("content"), list):
+                turns[-1]["content"].append(block)
+            else:
+                turns.append({"role": "user", "content": [block]})
+        else:
+            turns.append({"role": role, "content": message.get("content", "")})
+
+    openai_tools = overrides.pop("tools", None)
+    if openai_tools:
+        overrides["tools"] = [
+            {
+                "name": item.get("function", {}).get("name", ""),
+                "description": item.get("function", {}).get("description", ""),
+                "input_schema": item.get("function", {}).get("parameters", {"type": "object"}),
+            }
+            for item in openai_tools
+            if item.get("type") == "function" and isinstance(item.get("function"), dict)
+        ]
+    choice = overrides.pop("tool_choice", None)
+    if choice == "auto":
+        overrides["tool_choice"] = {"type": "auto"}
+    elif choice == "required":
+        overrides["tool_choice"] = {"type": "any"}
+    elif isinstance(choice, dict):
+        function = choice.get("function") or {}
+        if function.get("name"):
+            overrides["tool_choice"] = {"type": "tool", "name": function["name"]}
+
     body: dict[str, Any] = {
         "model": overrides.pop("model", profile.model),
         "messages": turns,
@@ -86,7 +145,7 @@ def _anthropic_payload(
     return body
 
 
-def _payload(profile: Profile, messages: list[dict[str, str]], stream: bool, **overrides: Any) -> dict[str, Any]:
+def _payload(profile: Profile, messages: list[dict[str, Any]], stream: bool, **overrides: Any) -> dict[str, Any]:
     if profile.provider.lower() == "anthropic":
         return _anthropic_payload(profile, messages, stream, **overrides)
     body: dict[str, Any] = {
@@ -151,7 +210,7 @@ def _explain_network_error(exc: BaseException) -> LLMError:
 
 def complete(
     profile: Profile,
-    messages: list[dict[str, str]],
+    messages: list[dict[str, Any]],
     **overrides: Any,
 ) -> LLMResult:
     """Llamada no streaming. Devuelve texto + uso real reportado por el proveedor."""
@@ -182,7 +241,13 @@ def complete(
     )
     if not usage.total_tokens:
         usage.total_tokens = usage.prompt_tokens + usage.completion_tokens
-    return LLMResult(text=text, model=str(data.get("model") or payload["model"]), usage=usage, raw=data)
+    return LLMResult(
+        text=text,
+        model=str(data.get("model") or payload["model"]),
+        usage=usage,
+        raw=data,
+        tool_calls=_extract_tool_calls(data),
+    )
 
 
 def _extract_text(data: dict[str, Any]) -> str:
@@ -205,17 +270,49 @@ def _extract_text(data: dict[str, Any]) -> str:
     return ""
 
 
+def _extract_tool_calls(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Normaliza tool calls de Chat Completions y Anthropic Messages."""
+    choices = data.get("choices")
+    message = ((choices[0] or {}).get("message") or {}) if isinstance(choices, list) and choices else {}
+    calls: list[dict[str, Any]] = []
+    for index, call in enumerate(message.get("tool_calls") or []):
+        function = call.get("function") or {}
+        arguments: Any = function.get("arguments", "{}")
+        if isinstance(arguments, str):
+            try:
+                arguments = json.loads(arguments)
+            except json.JSONDecodeError:
+                pass  # engine valida; preserva texto malformado para devolver observación al modelo.
+        calls.append({
+            "id": str(call.get("id") or f"call_{index}"),
+            "name": str(function.get("name") or ""),
+            "arguments": arguments,
+        })
+    for index, block in enumerate(data.get("content") or []):
+        if not isinstance(block, dict) or block.get("type") != "tool_use":
+            continue
+        calls.append({
+            "id": str(block.get("id") or f"toolu_{index}"),
+            "name": str(block.get("name") or ""),
+            "arguments": block.get("input") if isinstance(block.get("input"), dict) else {},
+        })
+    return calls
+
+
 def stream(
     profile: Profile,
-    messages: list[dict[str, str]],
+    messages: list[dict[str, Any]],
     **overrides: Any,
 ) -> Iterator[dict[str, Any]]:
-    """Generador SSE. Emite eventos: `delta`, `usage`, `done`, `error`."""
+    """SSE normalizado: deltas de texto, tool_calls, uso y fin."""
     payload = _payload(profile, messages, stream=True, **overrides)
-    payload.setdefault("stream_options", {"include_usage": True})
+    if profile.provider.lower() != "anthropic":
+        payload.setdefault("stream_options", {"include_usage": True})
     req = _request(profile, payload, "text/event-stream")
     started = time.monotonic()
     usage = Usage()
+    openai_calls: dict[int, dict[str, Any]] = {}
+    anthropic_calls: dict[int, dict[str, Any]] = {}
     try:
         with urllib.request.urlopen(req, timeout=profile.timeout) as resp:
             for raw_line in resp:
@@ -234,6 +331,32 @@ def stream(
                     usage.prompt_tokens = int(u.get("prompt_tokens") or u.get("input_tokens") or 0)
                     usage.completion_tokens = int(u.get("completion_tokens") or u.get("output_tokens") or 0)
                     usage.total_tokens = int(u.get("total_tokens") or 0)
+
+                choices = data.get("choices") or []
+                if choices:
+                    delta = (choices[0] or {}).get("delta") or {}
+                    for call in delta.get("tool_calls") or []:
+                        index = int(call.get("index", 0))
+                        entry = openai_calls.setdefault(index, {"id": "", "name": "", "arguments": ""})
+                        entry["id"] = call.get("id") or entry["id"]
+                        function = call.get("function") or {}
+                        entry["name"] += function.get("name") or ""
+                        entry["arguments"] += function.get("arguments") or ""
+
+                kind = data.get("type")
+                if kind == "content_block_start":
+                    block = data.get("content_block") or {}
+                    if block.get("type") == "tool_use":
+                        anthropic_calls[int(data.get("index", 0))] = {
+                            "id": block.get("id") or "",
+                            "name": block.get("name") or "",
+                            "arguments": block.get("input") if isinstance(block.get("input"), dict) else {},
+                            "json_delta": "",
+                        }
+                elif kind == "content_block_delta" and (data.get("delta") or {}).get("type") == "input_json_delta":
+                    entry = anthropic_calls.setdefault(int(data.get("index", 0)), {"id": "", "name": "", "arguments": {}, "json_delta": ""})
+                    entry["json_delta"] += (data.get("delta") or {}).get("partial_json", "")
+
                 piece = _delta_text(data)
                 if piece:
                     yield {"type": "delta", "text": piece}
@@ -242,6 +365,25 @@ def stream(
     except (urllib.error.URLError, socket.timeout, TimeoutError, OSError) as exc:
         raise _explain_network_error(exc) from exc
 
+    calls: list[dict[str, Any]] = []
+    for index, call in sorted(openai_calls.items()):
+        arguments: Any = call["arguments"] or "{}"
+        if isinstance(arguments, str):
+            try:
+                arguments = json.loads(arguments)
+            except json.JSONDecodeError:
+                pass
+        calls.append({"id": call["id"] or f"call_{index}", "name": call["name"], "arguments": arguments})
+    for index, call in sorted(anthropic_calls.items()):
+        arguments = call["arguments"]
+        if call["json_delta"]:
+            try:
+                arguments = json.loads(call["json_delta"])
+            except json.JSONDecodeError:
+                arguments = call["json_delta"]
+        calls.append({"id": call["id"] or f"toolu_{index}", "name": call["name"], "arguments": arguments})
+    if calls:
+        yield {"type": "tool_calls", "tool_calls": calls}
     usage.latency_ms = int((time.monotonic() - started) * 1000)
     if not usage.total_tokens:
         usage.total_tokens = usage.prompt_tokens + usage.completion_tokens

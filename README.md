@@ -1,9 +1,9 @@
 # Ely Cowork · Agent OS
 
 Interfaz y CLI para trabajar con agentes de IA mediante **URL + API Key** reales.
-Sin respuestas simuladas: cada mensaje que envías se convierte en una petición HTTP
-al proveedor elegido, y lo que ves en pantalla es lo que devolvió el proveedor
-(incluidos los errores).
+El chat usa el proveedor elegido y puede invocar herramientas locales, corridas de
+Harness-Candy, decisiones tipadas locales con Laya y servidores MCP configurados;
+los resultados de cada herramienta vuelven al modelo antes de la respuesta final.
 
 ```
 CLI/        código de la CLI y del servidor (Python, sin dependencias)
@@ -14,10 +14,37 @@ CLI/        código de la CLI y del servidor (Python, sin dependencias)
   rust/     cliente Rust de la API local (std only, sin crates)
 IDE/        frontend (HTML/CSS/JS sin build, sin frameworks)
             index.html = el HTML base entregado, sin una sola etiqueta cambiada
-Harness/    backend de rutinas existente — solo lectura, no se modifica
-MCPs/       backend de herramientas existente — solo lectura, no se modifica
-profiles/   11 perfiles (URL + modelo + nombre de la variable de la clave)
+Harness-Candy/  backend de orquestación opcional, invocable desde chat o API
+MCPs/           manifiestos de servidores MCP; JSON-RPC stdio/Streamable HTTP
+IDE/src/ y IDE/extensions/  componentes upstream/vendorados del fork de VS Code
+laya-main/      motor de decisiones opcional para alternativas tipadas de los agentes
+profiles/       11 perfiles (URL + modelo + nombre de la variable de la clave)
 ```
+
+## Alcance real y trabajo pendiente
+
+Ely Cowork hoy es la aplicación de `CLI/ely_cli` + `IDE/frontend`: conversa con
+proveedores por HTTP, guarda sesiones, ejecuta workflows secuenciales y conecta
+opcionalmente Harness-Candy, Laya y servidores MCP declarados. Las conexiones
+son explícitas y opcionales; no hacen obligatorias todas las dependencias del
+checkout ni convierten en capacidades de Ely el código upstream/vendorado de
+`IDE/src/` y `IDE/extensions/`.
+
+| Prioridad | Pendiente para competir en tareas de ingeniería | Estado verificable hoy |
+|---|---|---|
+| 1 | Bucle agéntico de llamadas a herramientas: ejecutar, observar resultados y corregir iterativamente. | Photon/Codey tienen tools locales; Photon puede lanzar `harness.run`; ambos pueden pedir decisiones tipadas a Laya; herramientas de MCP configuradas se añaden dinámicamente. Hay límites por turno. Falta un ciclo de reparación más robusto y aprobación interactiva. |
+| 2 | Edición autónoma con diffs, ejecución de tests en sandbox y reintentos hasta cumplir los gates. | El chat crea/reemplaza archivos de texto, guarda backup y devuelve diff al modelo; puede ejecutar comandos con timeout 20 s. **Los comandos no están aislados** y heredan permisos de Ely; faltan sandbox real, revisión/aprobación de diff y gates iterativos fiables. |
+| 3 | Cliente MCP funcional JSON-RPC (stdio/transportes soportados), con ciclo de vida y llamadas reales. | `mcp_client.py` inicia servidores stdio declarados y soporta Streamable HTTP; lista y ejecuta tools en el bucle de chat. El transporte SSE antiguo no está soportado; solo se conectan servidores explícitamente declarados y habilitados. |
+| 4 | Integrar DAG, WEV y sandbox de Harness-Candy como ejecutor configurable del chat. | `harness.run` y `POST /api/cowork/run` invocan `CoworkRunner` con el perfil LLM activo; quedan trazas y validación. La adaptación/probing de Harness² está desactivada por defecto y no reemplaza el chat normal. |
+| 5 | Ejecutar y publicar resultados reproducibles de benchmarks externos con versiones, modelo, configuración y coste. | No se publican resultados de SWE-bench Verified ni Terminal-Bench para Ely. |
+
+Los fixtures locales `Harness-Candy/benchmarks/mini_mmlu.json` (10 casos) y
+`swe_mini.json` (4 tareas de código) son suites pequeñas para pruebas/demos.
+Las cuatro tareas solo son **inspiradas en el estilo SWE-bench**: no son el
+dataset SWE-bench Verified, no siguen su protocolo de evaluación y no permiten
+inferir ni anunciar un score de SWE-bench. Tampoco son resultados de
+Terminal-Bench ni una evaluación con un modelo frontier. No se deben sumar los
+14 casos y presentarlos como un benchmark externo.
 
 ## Arranque rápido
 
@@ -232,7 +259,8 @@ Todo bajo `/api` (JSON; SSE en `/api/chat/stream`):
 GET  /health                  GET  /profiles          POST /profiles/test
 POST /profiles/test-all       POST /profiles/default  POST /profiles/key
 GET  /agents                  GET  /workflows         POST /workflows/run
-POST /chat                    POST /chat/stream       GET  /sessions
+POST /chat                    POST /chat/stream       GET /backends
+POST /cowork/run               GET /sessions
 POST /sessions                DELETE /sessions/:id    GET  /memory
 POST /memory                  DELETE /memory/:id      GET  /skills  POST /skills
 POST /skills/run              GET  /tools              GET  /mcp
@@ -283,13 +311,31 @@ cargo run -- ask "resume el repositorio" dev local
 cargo run -- get /api/stats
 ```
 
-## Harness y MCPs
+## Harness y MCPs: integración actual
 
-No se han modificado. Ely los consulta en **modo lectura**:
+- `MCPs/` — `mcp.py` descubre manifiestos y `mcp_client.py` implementa JSON-RPC
+  stdio y Streamable HTTP para servidores explícitamente habilitados. La ruta
+  `GET /api/tools` y los turnos de chat cargan el catálogo e inician servidores
+  habilitados cuando hace falta. Los servidores que referencian variables ausentes
+  se omiten y aparecen en `/api/backends` como bloqueados (sin revelar valores).
+  No soporta el transporte SSE legado.
+- `Harness-Candy/` — `CoworkRunner` se puede invocar desde el chat con `harness.run`
+  o desde `POST /api/cowork/run`. Usa el perfil LLM actual, persiste trazas y
+  reporta WEV/ELY. Las sondas de adaptación están desactivadas por defecto; no
+  es el ejecutor por defecto de cada mensaje.
+- `laya-main/` — el chat conecta `laya.decide` para que Photon compare alternativas
+  antes de propuestas y decisiones materiales en ejecución; Codey puede invocarlo
+  excepcionalmente. La primera llamada puede requerir dependencias de inferencia y
+  descargar pesos. Laya recomienda opciones, pero no autoriza acciones.
+- `IDE/src/` y `IDE/extensions/` — código upstream/vendorado del fork de VS Code;
+  su presencia no implica que Ely haya implementado ni verificado todas esas
+  funciones. La app Ely descrita aquí vive principalmente en `IDE/frontend/`.
 
-- `MCPs/` — busca manifiestos (`mcpServers`, `servers`) y reporta lo que encuentra.
-  Si está vacío, la interfaz dice `not-configured`; no inventa servidores.
-- `Harness/` — backends de rutinas; la CLI y el IDE no escriben en esa carpeta.
+No se han publicado resultados de Ely en SWE-bench Verified o Terminal-Bench.
+Las suites locales `mini_mmlu.json` (10 preguntas) y `swe_mini.json` (4 tareas)
+son fixtures pequeños de desarrollo; «estilo SWE-bench» no significa el dataset
+ni el protocolo oficial. No se deben presentar sus 14 casos agregados como un
+score de SWE-bench, MMLU o Terminal-Bench.
 
 ---
 

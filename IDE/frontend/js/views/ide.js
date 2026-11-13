@@ -379,21 +379,26 @@
     }
 
     /* ---------------------------------------------------------- activity */
+    /* Codicons oficiales de VS Code, servidos como SVG local (sin emoji ni
+       dependencia de fuentes instaladas). */
     const ACT = [
-      ["explorer", "🗀", T("ide.explorer")], ["search", "⌕", T("ide.search")],
-      ["scm", "⑂", T("ide.scm")], ["run", "▶", T("ide.runDebug")], ["extensions", "⧉", T("ide.extensions")]
+      ["explorer", "files", T("ide.explorer")], ["search", "search", T("ide.search")],
+      ["scm", "source-control", T("ide.scm")], ["run", "debug-alt", T("ide.runDebug")],
+      ["extensions", "extensions", T("ide.extensions")]
     ];
     ACT.forEach(([id, icon, label]) => {
       const b = UI.el("button", {
-        class: "vsc-act-btn" + (state.activity === id ? " on" : ""), title: label, html: icon,
+        class: "vsc-act-btn" + (state.activity === id ? " on" : ""), title: label,
         "aria-label": label, "aria-pressed": state.activity === id ? "true" : "false"
-      });
+      }, [UI.el("span", { class: "vsc-codicon codicon-" + icon, "aria-hidden": "true" })]);
       b.addEventListener("click", () => setActivity(id));
       activity.appendChild(b);
     });
     activity.appendChild(UI.el("div", { style: { flex: "1" } }));
-    activity.appendChild(UI.el("button", { class: "vsc-act-btn", title: T("nav.settings"), "aria-label": T("nav.settings"), html: "⚙",
-      onclick: () => Settings.openModal(App) }));
+    activity.appendChild(UI.el("button", {
+      class: "vsc-act-btn", title: T("nav.settings"), "aria-label": T("nav.settings"),
+      onclick: () => Settings.openModal(App, "ide")
+    }, [UI.el("span", { class: "vsc-codicon codicon-gear", "aria-hidden": "true" })]));
     function setActivity(id) {
       state.activity = id;
       activity.querySelectorAll(".vsc-act-btn").forEach((b, i) => {
@@ -1336,7 +1341,7 @@
       ]);
       const card = (icon, title, desc, action) => {
         const node = UI.el("button", { class: "vsc-wl-card" }, [
-          UI.el("span", { class: "vsc-wl-card-icon", "aria-hidden": "true", text: icon }),
+          UI.el("span", { class: "vsc-wl-card-icon vsc-codicon codicon-" + icon + " vsc-wl-icon-" + icon, "aria-hidden": "true" }),
           UI.el("span", { class: "vsc-wl-card-text" }, [
             UI.el("b", { text: title }),
             UI.el("span", { class: "muted", text: desc })
@@ -1345,9 +1350,9 @@
         node.addEventListener("click", action);
         return node;
       };
-      walk.appendChild(card("★", T("ide.walkStartTitle"), T("ide.walkStartDesc"), () => walkthrough("start")));
-      walk.appendChild(card("💡", T("ide.walkBasicsTitle"), T("ide.walkBasicsDesc"), () => walkthrough("basics")));
-      walk.appendChild(card("♿", T("ide.walkA11yTitle"), T("ide.walkA11yDesc"), () => { if (window.A11y) A11y.help(); }));
+      walk.appendChild(card("star-full", T("ide.walkStartTitle"), T("ide.walkStartDesc"), () => walkthrough("start")));
+      walk.appendChild(card("lightbulb", T("ide.walkBasicsTitle"), T("ide.walkBasicsDesc"), () => walkthrough("basics")));
+      walk.appendChild(card("person-voice", T("ide.walkA11yTitle"), T("ide.walkA11yDesc"), () => { if (window.A11y) A11y.help(); }));
 
       const show = UI.el("input", { type: "checkbox", id: "wl-show", checked: state.welcome });
       show.addEventListener("change", () => {

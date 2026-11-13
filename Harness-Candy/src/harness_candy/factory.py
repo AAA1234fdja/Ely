@@ -72,6 +72,7 @@ def build_runner(
     budget: Budget | None = None,
     max_concurrency: int = 4,
     use_security_scan_agent: bool = True,
+    isa_backend: LLMBackend | None = None,
 ) -> CoworkRunner:
     """Construye el CoworkRunner completo con valores por defecto seguros."""
     backend = backend or make_backend(backend_kind)
@@ -83,7 +84,7 @@ def build_runner(
     # ISA sin backend LLM usa el planificador determinista (heuristica), que
     # genera DAGs reales para objetivos de seguridad; con LLM real se puede
     # pasar otro ISA (ver docs/DISENO_COMBINADO.md).
-    isa = ISA(backend=None, model="modelo-potente")
+    isa = ISA(backend=isa_backend, model="modelo-potente")
     yev = YEV(pool)
     zev = ZEV(knowledge)
     if use_security_scan_agent:

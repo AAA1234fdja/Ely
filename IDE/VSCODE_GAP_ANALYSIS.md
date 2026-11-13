@@ -322,7 +322,7 @@ propia y **autocontenida**: 14 idiomas, un paquete por idioma, carga bajo demand
   patrones del backend (`hace 5 min`, `Línea 12, columna 4`, `$1 configurados`)
   tienen clave `pat.*` propia, así que cada idioma reordena la frase, no sólo
   sustituye palabras. Un test comprueba que los `$1`/`$2` sobreviven en los 12.
-- **Cobertura completa y verificada.** **745 de 745 claves** en los 12 paquetes
+- **Cobertura completa y verificada.** **747 de 747 claves** en los 12 paquetes
   (100 %), no una muestra: incluye las 120 claves de accesibilidad, las 60 del
   IDE, chat, almacén, visores y extensiones. Ajustes enseña el porcentaje real
   calculado sobre el diccionario, y el aviso de fallback sólo aparece si un
@@ -356,13 +356,13 @@ propia y **autocontenida**: 14 idiomas, un paquete por idioma, carga bajo demand
 
 **Presupuesto de líneas.** El código de esta fase son **351 líneas** nuevas o
 modificadas (motor, selector, CSS, host de extensiones, backend), dentro del
-margen que quedaba de las 10.000. Los **12 paquetes suman 9.366 líneas**, pero
+margen que quedaba de las 10.000. Los **12 paquetes suman 9.390 líneas**, pero
 son **datos de traducción**, no lógica: se cuentan aparte, igual que los 910 SVG
 de iconos de la fase 4 no se contaron como código. Los tests y el manifiesto de
 núcleo (421) tampoco son lógica de producto.
 
-Verificación: **299 tests Python** (41 de idiomas) y harness jsdom **193/193** de
+Verificación: **303 tests Python** (41 de locales) y harness jsdom **193/193** de
 idiomas, sin regresiones en terminal (93), IDE+a11y (67), explorador (78),
 extensiones+Tab (100), chat (36), ida y vuelta de idioma (40) ni galería de
-iconos (19). Los tests de idiomas exigen ahora las 745 claves por paquete y
+iconos (19). Los tests de idiomas exigen ahora las 747 claves por paquete y
 vigilan marcadores, literales técnicos, cifras y alfabeto propio.

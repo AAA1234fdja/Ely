@@ -73,6 +73,101 @@ class AccessibilityModuleTest(unittest.TestCase):
         self.assertIn("A11y.init(this)", app)
         self.assertLess(app.index("js/a11y.js"), app.index("js/chat-widget.js"))
 
+    def test_collapsed_sidebar_only_keeps_ide_and_cli_shortcuts(self):
+        app = read(JS / "app.js")
+        styles = read(CSS / "styles.css")
+        self.assertIn('href: "#/chat"', app)
+        self.assertIn('text: "CLI"', app)
+        self.assertIn('data-nav-cli', app)
+        self.assertIn('const cliLink = UI.el("a", {', app)
+        self.assertIn('if (item.id === "ide") nav.appendChild(cliLink);', app)
+        self.assertNotIn('nav a.nav-cli { display: none; }', styles)
+        self.assertIn('body.collapsed { --sidebar: 48px; }', styles)
+        self.assertIn('body.collapsed nav .nav-group', styles)
+        self.assertIn('body.collapsed nav a:not([href="#/ide"]):not(.nav-cli):not(.nav-current-view)', styles)
+        self.assertIn('body.collapsed nav a.nav-cli', styles)
+        self.assertIn('body.collapsed nav a.nav-current-view', styles)
+        self.assertIn('data-nav-current', app)
+        self.assertIn('const currentNav = NAV.flatMap', app)
+        self.assertIn('[data-a11y-links="underline"] #nav a { text-decoration: none; }', styles)
+
+    def test_fixed_interface_scale_presets_are_persisted_and_applied(self):
+        settings = read(JS / "settings.js")
+        styles = read(CSS / "styles.css")
+        self.assertIn("viewScale: 1", settings)
+        for scale in ("0.67", "0.75", "0.8", "0.9", "1", "1.1", "1.25", "1.5"):
+            self.assertIn(scale, settings)
+        self.assertIn('onchange: (event) => this.set({ [name]: Number(event.target.value) })', settings)
+        self.assertIn('root.style.setProperty("--ely-cowork-scale", String(coworkScale))', settings)
+        self.assertIn('root.style.setProperty("--ely-active-scale", String(activeScale))', settings)
+        self.assertIn('body aside { width: var(--ely-sidebar-content-width); height: var(--ely-sidebar-height); transform: scale(var(--ely-cowork-scale, 1));', settings)
+        self.assertIn('body main { zoom: var(--ely-active-scale, 1); width: var(--ely-main-width);', settings)
+        self.assertIn('zoom: 1;', styles)
+        self.assertNotIn("viewExtent", settings)
+
+    def test_settings_are_separated_by_ide_cli_and_cowork(self):
+        settings = read(JS / "settings.js")
+        app = read(JS / "app.js")
+        self.assertIn('scopeLabels = { ide: "IDE", cli: "CLI", cowork: "Ely Cowork" }', settings)
+        self.assertIn('inScope("cowork", row(t("set.viewScale")', settings)
+        self.assertIn('inScope("ide", row(t("cmp.settingLabel")', settings)
+        self.assertIn('scopeKeys: { ide: "ely.settings.ide.v1", cli: "ely.settings.cli.v1", cowork: "ely.settings.cowork.v1" }', settings)
+        self.assertIn('inScope("cowork", row(t("set.reducedMotion")', settings)
+        self.assertIn('body[data-settings-scope="ide"][data-density="compact"] #view', settings)
+        self.assertIn('body aside { width: var(--ely-sidebar-content-width); height: var(--ely-sidebar-height); transform: scale(var(--ely-cowork-scale, 1));', settings)
+        self.assertIn('body main { zoom: var(--ely-active-scale, 1); width: var(--ely-main-width);', settings)
+        self.assertIn('const profileSelect = UI.el("select", {', settings)
+        self.assertIn('inScope("cowork", row(t("set.profile")', settings)
+        self.assertIn('onchange: (event) => {\n          App.setProfile(event.target.value);', settings)
+        self.assertIn('inScope("ide", row(t("set.viewScale")', settings)
+        self.assertIn('inScope("cli", row(t("set.viewScale")', settings)
+        self.assertIn('inScope("cli", row(t("set.stream")', settings)
+        self.assertIn('inScope("cli", row(t("set.enterSends")', settings)
+        self.assertIn('inScope("cowork", row(t("set.language")', settings)
+        self.assertIn('inScope("cowork", UI.el("h3", { style: { marginTop: 0 }, text: t("set.connection")', settings)
+        self.assertIn('Settings.openModal(this, "cowork")', app)
+        self.assertIn('Settings.openModal(this, scope)', app)
+        self.assertIn('Settings.openModal(App, "ide")', read(JS / "views" / "ide.js"))
+        self.assertIn('role: "tablist"', settings)
+        self.assertIn('event.key !== "ArrowLeft" && event.key !== "ArrowRight"', settings)
+
+    def test_sidebar_settings_follow_the_active_cli_or_cowork_window(self):
+        app = read(JS / "app.js")
+        chat = read(JS / "chat.js")
+        styles = read(CSS / "styles.css")
+        self.assertIn('id: "sidebar-settings"', app)
+        self.assertIn('class: "sidebar-settings-button"', app)
+        self.assertIn('const isCli = this.route === "chat"', app)
+        self.assertIn('footer.hidden = isCli', app)
+        self.assertIn('if (isCli) return;', app)
+        self.assertIn('const scope = "cowork"', app)
+        self.assertIn('const label = t("set.title") + " · Ely Cowork"', app)
+        self.assertIn('Settings.openModal(this, scope)', app)
+        self.assertIn('this.renderSidebarSettings();', app)
+        self.assertIn('id: "sidebar-peek"', app)
+        self.assertIn('body.classList.toggle("sidebar-hidden", sidebarHidden)', app)
+        self.assertIn('body.sidebar-hidden aside { display: none; }', styles)
+        self.assertIn('border-radius: 50%;', styles)
+        self.assertIn('bottom: 12px; left: calc(var(--ely-sidebar-edge, 268px) - 4px);', styles)
+        self.assertIn('width: 20px; height: 20px;', styles)
+        self.assertIn('class: "cs-settings-footer"', chat)
+        self.assertIn('Settings.openModal(App, "cli")', chat)
+        self.assertIn('flex: 1; flex-direction: column; gap: 1px; min-height: 0; overflow-y: auto;', styles)
+        self.assertIn('margin-top: auto', styles)
+        self.assertIn('body.collapsed .sidebar-settings-label { display: none; }', styles)
+
+    def test_cli_chat_sidebar_can_collapse_and_expand(self):
+        chat = read(JS / "chat.js")
+        styles = read(CSS / "styles.css")
+        self.assertIn('localStorage.getItem("ely.cli.sidebarHidden")', chat)
+        self.assertIn('shell.classList.toggle("cli-sidebar-hidden", sidebarHidden)', chat)
+        self.assertIn('class: "icon-btn cs-collapse"', chat)
+        self.assertIn('onclick: () => setSidebarHidden(!sidebarHidden)', chat)
+        self.assertIn('.chat-shell.cli-sidebar-hidden .chat-sidebar { display: none; }', styles)
+        self.assertIn('.cs-collapse {', styles)
+        self.assertIn('top: 24px; left: 252px;', styles)
+        self.assertNotIn("cli-sidebar-peek", chat + styles)
+
 
 class IdeAccessibilityWiringTest(unittest.TestCase):
     def setUp(self):
@@ -84,6 +179,19 @@ class IdeAccessibilityWiringTest(unittest.TestCase):
         self.assertIn("A11y.tablist(tabs", self.ide)
         self.assertIn('activity.setAttribute("role", "toolbar")', self.ide)
         self.assertIn('statusbar.setAttribute("role", "status")', self.ide)
+
+    def test_activity_bar_uses_official_vscode_codicons(self):
+        for codicon in ("files", "search", "source-control", "debug-alt", "extensions", "gear"):
+            self.assertIn("codicon-" + codicon, self.ide + read(CSS / "styles.css"))
+            self.assertTrue((ROOT / "IDE" / "frontend" / "icons" / "codicons" / (codicon + ".svg")).is_file())
+        css = read(CSS / "styles.css")
+        self.assertIn("-webkit-mask: var(--codicon-src)", css)
+
+    def test_walkthrough_cards_use_official_codicons(self):
+        for codicon in ("star-full", "lightbulb", "person-voice"):
+            self.assertIn('card("' + codicon + '"', self.ide)
+            self.assertTrue((ROOT / "IDE" / "frontend" / "icons" / "codicons" / (codicon + ".svg")).is_file())
+        self.assertIn(".vsc-wl-card-icon.vsc-codicon { width: 15px; height: 15px;", read(CSS / "styles.css"))
 
     def test_tree_items_carry_data_for_keyboard_navigation(self):
         self.assertIn('"data-tree-item": "1"', self.ide)

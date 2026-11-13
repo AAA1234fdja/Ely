@@ -19,20 +19,50 @@
     const main = UI.el("div", { class: "chat-main" });
     shell.appendChild(sidebar);
     shell.appendChild(main);
+    let sidebarHidden = false;
+    try {
+      const savedSidebarState = localStorage.getItem("ely.cli.sidebarHidden");
+      sidebarHidden = savedSidebarState === "1" || (savedSidebarState === null && window.innerWidth <= 760);
+    } catch (e) { /* noop */ }
+    const collapseButton = UI.el("button", {
+      class: "icon-btn cs-collapse",
+      type: "button",
+      onclick: () => setSidebarHidden(!sidebarHidden)
+    });
+    function setSidebarHidden(hidden) {
+      sidebarHidden = Boolean(hidden);
+      shell.classList.toggle("cli-sidebar-hidden", sidebarHidden);
+      const label = t(sidebarHidden ? "chat.expandSidebar" : "chat.collapseSidebar");
+      collapseButton.textContent = sidebarHidden ? "›" : "‹";
+      collapseButton.title = label;
+      collapseButton.setAttribute("aria-label", label);
+      collapseButton.setAttribute("aria-expanded", sidebarHidden ? "false" : "true");
+      try { localStorage.setItem("ely.cli.sidebarHidden", sidebarHidden ? "1" : "0"); } catch (e) { /* noop */ }
+    }
+    shell.appendChild(collapseButton);
+    setSidebarHidden(sidebarHidden);
 
     /* ---------------------------------------------------------- sidebar */
+    const storageButton = UI.el("button", {
+      class: "icon-btn cs-open-storage",
+      type: "button",
+      html: "◧",
+      title: t("chat.openStorage"),
+      "aria-label": t("chat.openStorage"),
+      onclick: () => App.navigate("storage")
+    });
     sidebar.appendChild(UI.el("div", { class: "cs-brand" }, [
       UI.el("span", { class: "cs-logo", "aria-hidden": "true", text: "◈" }),
       UI.el("span", { class: "cs-name", text: "Ely" }),
-      UI.el("div", { style: { flex: "1" } }),
-      UI.el("button", { class: "icon-btn", html: "◧", title: t("chat.openStorage"), "aria-label": t("chat.openStorage"), onclick: () => App.navigate("storage") })
+      UI.el("div", { class: "cs-brand-spacer", style: { flex: "1" } }),
+      storageButton
     ]));
 
     /* Dos acciones arriba: nueva conversación y nuevo proyecto. */
-    const newChatBtn = UI.el("button", { class: "cs-new", onclick: () => S.newChat() }, [
+    const newChatBtn = UI.el("button", { class: "cs-new", title: t("chat.new"), "aria-label": t("chat.new"), onclick: () => S.newChat() }, [
       UI.el("span", { "aria-hidden": "true", text: "✎" }), UI.el("span", { text: t("chat.new") })
     ]);
-    const newProjBtn = UI.el("button", { class: "cs-new ghost", onclick: () => createProjectModal() }, [
+    const newProjBtn = UI.el("button", { class: "cs-new ghost", title: t("chat.newProject"), "aria-label": t("chat.newProject"), onclick: () => createProjectModal() }, [
       UI.el("span", { "aria-hidden": "true", text: "🗀" }), UI.el("span", { text: t("chat.newProject") })
     ]);
     sidebar.appendChild(UI.el("div", { class: "cs-actions" }, [newChatBtn, newProjBtn]));
@@ -66,6 +96,20 @@
     sidebar.appendChild(recentsHead);
     sidebar.appendChild(recentsList);
     sidebar.appendChild(showMore);
+
+    /* Ajustes propios de CLI, accesibles desde el pie de su barra lateral. */
+    const cliSettingsLabel = t("set.title") + " · CLI";
+    const cliSettingsButton = UI.el("button", {
+      class: "sidebar-settings-button",
+      type: "button",
+      title: cliSettingsLabel,
+      "aria-label": cliSettingsLabel
+    }, [
+      UI.el("span", { class: "vsc-codicon codicon-gear", "aria-hidden": "true" }),
+      UI.el("span", { class: "sidebar-settings-label", text: cliSettingsLabel })
+    ]);
+    cliSettingsButton.addEventListener("click", () => Settings.openModal(App, "cli"));
+    sidebar.appendChild(UI.el("div", { class: "cs-settings-footer" }, [cliSettingsButton]));
 
     /* ---------------------------------------------------------- modales */
     function createProjectModal() {
@@ -227,9 +271,24 @@
       ]);
       const bubble = body.querySelector(".bubble");
       if (msg.streaming && !msg.content) {
-        bubble.innerHTML = '<span class="typing" aria-label="' + UI.esc(t("chat.thinking")) + '"><i></i><i></i><i></i></span>';
+        if (msg.meta && msg.meta.activeTool) {
+          bubble.appendChild(UI.el("span", {
+            class: "chat-tool-status",
+            role: "status",
+            text: t("chat.toolRunning") + " · " + msg.meta.activeTool
+          }));
+        } else {
+          bubble.innerHTML = '<span class="typing" aria-label="' + UI.esc(t("chat.thinking")) + '"><i></i><i></i><i></i></span>';
+        }
       } else {
         bubble.innerHTML = UI.md(msg.content || "");
+        if (msg.streaming && msg.meta && msg.meta.activeTool) {
+          bubble.appendChild(UI.el("div", {
+            class: "chat-tool-status",
+            role: "status",
+            text: t("chat.toolRunning") + " · " + msg.meta.activeTool
+          }));
+        }
       }
       if (msg.error) {
         bubble.appendChild(UI.el("div", {

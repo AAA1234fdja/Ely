@@ -254,6 +254,10 @@
             if (opts.onDelta) opts.onDelta(acc, assistantMsg);
           },
           onUsage: (usage) => { assistantMsg.meta.tokens = usage.total_tokens; },
+          onTool: (event) => {
+            assistantMsg.meta.activeTool = event.status === "running" ? String(event.name || "").slice(0, 80) : null;
+            notify("tool");
+          },
           onDone: (event) => { if (event.usage) assistantMsg.meta.tokens = event.usage.total_tokens; },
           onError: (err) => {
             markFirst();

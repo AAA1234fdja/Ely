@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 
-from . import __version__, llm, mcp, repos, routes, workspace
+from . import __version__, llm, mcp, mcp_client, repos, routes, workspace
 from .agents import AGENTS, AGENTS_BY_ID, get_agent, tools, workflows
 from .config import (
     ConfigError,
@@ -238,9 +238,8 @@ class ElyHandler(BaseHTTPRequestHandler):
             return self.json({"results": results})
 
         if method == "GET" and route == "/agents":
-            tools_available = mcp.discover(engine.root)["status"] == "configured"
             return self.json({
-                "agents": [agent.as_dict(tools_available) for agent in AGENTS],
+                "agents": [agent.as_dict(bool(agent.tools)) for agent in AGENTS],
                 "default": "photon",
             })
 
@@ -255,12 +254,17 @@ class ElyHandler(BaseHTTPRequestHandler):
             return self.json(flow)
 
         if method == "GET" and route == "/tools":
-            status = mcp.discover(engine.root)
+            remote_tools = mcp_client.tools_for(engine.root)
+            status = mcp_client.status(engine.root)
             return self.json({
                 "tools": tools(),
                 "mcp": status,
-                "available": status["status"] == "configured",
+                "mcp_tools": remote_tools,
+                "available": status["status"] == "configured" and bool(remote_tools),
             })
+
+        if method == "GET" and route == "/backends":
+            return self.json(engine.backend_status())
 
         if method == "GET" and route == "/stats":
             return self.json(engine.stats())
@@ -284,6 +288,20 @@ class ElyHandler(BaseHTTPRequestHandler):
                 max_tokens=body.get("max_tokens"),
                 temperature=body.get("temperature"),
             ))
+
+        if method == "POST" and route == "/cowork/run":
+            body = self.read_json()
+            objective = str(body.get("objective") or "").strip()
+            if not objective:
+                raise ApiError(400, "El campo 'objective' es obligatorio")
+            try:
+                return self.json(engine.run_cowork(
+                    objective, profile_id=body.get("profile"), seed=body.get("seed", 0)
+                ))
+            except ValueError as exc:
+                raise ApiError(400, str(exc)) from exc
+            except Exception as exc:
+                raise ApiError(502, "Falló la corrida de Harness-Candy", str(exc)[:500]) from exc
 
         if method == "POST" and route == "/chat/stream":
             body = self.read_json()
@@ -388,7 +406,7 @@ class ElyHandler(BaseHTTPRequestHandler):
             return self.json({"ok": engine.delete_memory(parts[2])})
 
         if method == "GET" and route == "/mcp":
-            return self.json(mcp.discover(engine.root))
+            return self.json(mcp_client.status(engine.root))
 
         # ------------------------------------------------ workspace / activos
         if method == "GET" and route == "/workspace/tree":
