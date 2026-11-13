@@ -32,10 +32,10 @@ checkout ni convierten en capacidades de Ely el código upstream/vendorado de
 
 | Prioridad | Pendiente para competir en tareas de ingeniería | Estado verificable hoy |
 |---|---|---|
-| 1 | Bucle agéntico de llamadas a herramientas: ejecutar, observar resultados y corregir iterativamente. | Photon/Codey tienen tools locales; Photon puede lanzar `harness.run`; ambos pueden pedir decisiones tipadas a Laya; herramientas de MCP configuradas se añaden dinámicamente. Hay límites por turno. Falta un ciclo de reparación más robusto y aprobación interactiva. |
-| 2 | Edición autónoma con diffs, ejecución de tests en sandbox y reintentos hasta cumplir los gates. | El chat crea/reemplaza archivos de texto, guarda backup y devuelve diff al modelo; puede ejecutar comandos con timeout 20 s. **Los comandos no están aislados** y heredan permisos de Ely; faltan sandbox real, revisión/aprobación de diff y gates iterativos fiables. |
+| 1 | Bucle agéntico de herramientas: ejecutar, observar resultados y corregir sin abortar tareas largas. | Photon/Codey tienen tools locales y MCP configurado; Laya orienta al agente principal. Los presupuestos escalan por workspace/tests (5–12 rondas, 8–32 llamadas) y existe techo total por tarea (12 000 tokens por defecto); al agotarse se devuelve parcial. Photon puede delegar tareas acotadas a hijos tipados sin heredar el chat ni volver a delegar. Falta paralelismo seguro y memoria compartida por proyecto. |
+| 2 | Edición y ejecución con límites de seguridad explícitos. | Las herramientas de chat ejecutan en snapshot aislado con Landlock + namespace de red si Linux lo permite; no ven `.ely`, secretos ni archivos privados y devuelven diff sin aplicarlo. Si no hay aislamiento, falla cerrado. En la terminal hay modos Solo lectura, Workspace aislado y Acceso total; este último exige confirmación por comando. | |
 | 3 | Cliente MCP funcional JSON-RPC (stdio/transportes soportados), con ciclo de vida y llamadas reales. | `mcp_client.py` inicia servidores stdio declarados y soporta Streamable HTTP; lista y ejecuta tools en el bucle de chat. El transporte SSE antiguo no está soportado; solo se conectan servidores explícitamente declarados y habilitados. |
-| 4 | Integrar DAG, WEV y sandbox de Harness-Candy como ejecutor configurable del chat. | `harness.run` y `POST /api/cowork/run` invocan `CoworkRunner` con el perfil LLM activo; quedan trazas y validación. La adaptación/probing de Harness² está desactivada por defecto y no reemplaza el chat normal. |
+| 4 | Integrar DAG, WEV y Harness² como ejecutor configurable del chat. | `harness.run`/`POST /api/cowork/run` invocan `CoworkRunner` con el perfil activo. Harness² prueba candidatos con WEV bajo un presupuesto global pequeño; puede ajustar `max_tokens` gradualmente y proponer cambios de prompt/skills/guardrails. Photon puede editar el objetivo de tokens entre 128 y 4096, con techo global; los permisos de seguridad no son adaptables. El chat normal sigue disponible. |
 | 5 | Ejecutar y publicar resultados reproducibles de benchmarks externos con versiones, modelo, configuración y coste. | No se publican resultados de SWE-bench Verified ni Terminal-Bench para Ely. |
 
 Los fixtures locales `Harness-Candy/benchmarks/mini_mmlu.json` (10 casos) y
@@ -120,7 +120,10 @@ Los campos `{VARIABLE}` se sustituyen desde el entorno al cargar.
 ./CLI/ely test -m models            # GET /models (metadatos)
 ./CLI/ely profiles                  # tabla de perfiles y claves enmascaradas
 ./CLI/ely ask "optimiza esto" -a dev# streaming en terminal
-./CLI/ely chat                      # REPL (/agente, /perfil, /limpiar, /salir)
+./CLI/ely chat                      # REPL (/agente, /perfil, /calidad, /salir)
+./CLI/ely quality                   # nivel sugerido, criterios y tasa de primer intento
+./CLI/ely quality Hight             # cambia el piso de calidad del workspace
+./CLI/ely quality --test-command "python3 -m unittest discover -s tests -q"
 ./CLI/ely run feature "login con OAuth"
 ./CLI/ely workflows                 # rutinas disponibles
 ./CLI/ely stats --json              # telemetría real
@@ -129,6 +132,28 @@ Los campos `{VARIABLE}` se sustituyen desde el entorno al cargar.
 ./CLI/ely memory --add "nota"       # memoria inyectable en el chat
 ./CLI/ely doctor                    # diagnóstico del entorno
 ```
+
+### Piso de calidad del chat
+
+El selector del chat flotante y `ely chat` → `/calidad [nivel]` controlan el
+estándar verificable, no una instrucción para maximizar razonamiento. Los
+niveles disponibles son `Xlow`, `Low`, `Mid`, `Hight`, `xHight`, `Uhight` e
+`Isabel te extraño`. El servidor bloquea cambios mientras cualquier tarea de
+ese workspace sigue activa; la selección queda en `.ely/quality-policy.json`.
+
+El nivel acota iteraciones de reparación y presupuesto total; cuando Photon
+edita archivos, Ely ejecuta comprobaciones sintácticas y los tests aplicables en
+un snapshot aislado. Si falla, el resultado vuelve al modelo para reparar hasta
+el límite del nivel. Si el criterio falla o no hay verificador, Ely devuelve el
+mejor parcial como **no certificado** y explica la evidencia; nunca declara
+aprobado lo que no pudo medir. La detección inicial sugiere `Mid` si encuentra
+tests o `Low` en otro caso. Los criterios se pueden definir con, por ejemplo,
+`ely quality --test-command "python3 -m unittest discover -s tests -q"` (se puede
+repetir); se ejecutan aislados, sin red externa (solo loopback), y sin acceso a secretos. Las tasas de primer intento se registran
+por modelo y nivel en `.ely/quality-history.json`.
+
+El bucle solo certifica criterios ejecutables: no promete equivalencia de
+razonamiento abierto ni garantiza calidad más allá de la evidencia mostrada.
 
 Variables: `ELY_PROFILE` (perfil por defecto), `ELY_DEBUG=1` (traza de errores),
 `ELY_HTTP_LOG=1` (log de peticiones), `PORT` (puerto del IDE).
@@ -260,7 +285,9 @@ GET  /health                  GET  /profiles          POST /profiles/test
 POST /profiles/test-all       POST /profiles/default  POST /profiles/key
 GET  /agents                  GET  /workflows         POST /workflows/run
 POST /chat                    POST /chat/stream       GET /backends
-POST /cowork/run               GET /sessions
+GET  /key-pool                 POST /key-pool/validate  POST /key-pool/roles
+GET/POST /harness/policy       POST /cowork/run
+POST /terminal/exec (requires confirmed=true for full mode)  GET /sessions
 POST /sessions                DELETE /sessions/:id    GET  /memory
 POST /memory                  DELETE /memory/:id      GET  /skills  POST /skills
 POST /skills/run              GET  /tools              GET  /mcp
@@ -311,6 +338,19 @@ cargo run -- ask "resume el repositorio" dev local
 cargo run -- get /api/stats
 ```
 
+## Pool de perfiles LLM
+
+El perfil seleccionado sigue siendo primario. Si falla por autenticación, permiso,
+rate limit o error transitorio, Ely puede fallar a perfiles con clave real ya
+configurados; valida el modelo del candidato mediante `/models` antes de enrutarlo.
+La caché de validación es de proceso (15 min), con cooldown y orden por conexiones
+activas. Config opcional ignorada por Git: `.ely/key-pool.json`, por ejemplo
+`{"roles":{"coder":["deepseek","openrouter"],"reviewer":["groq"]}}`.
+`GET /api/key-pool` muestra metadatos sin secretos, `POST /api/key-pool/roles`
+guarda la lista de perfiles elegibles por rol y `POST /api/key-pool/validate`
+valida un perfil explícitamente. No hay telemetría de coste/cuota por clave ni
+control de RPM integrado todavía; perfiles con claves de fixture se excluyen.
+
 ## Harness y MCPs: integración actual
 
 - `MCPs/` — `mcp.py` descubre manifiestos y `mcp_client.py` implementa JSON-RPC
@@ -321,8 +361,9 @@ cargo run -- get /api/stats
   No soporta el transporte SSE legado.
 - `Harness-Candy/` — `CoworkRunner` se puede invocar desde el chat con `harness.run`
   o desde `POST /api/cowork/run`. Usa el perfil LLM actual, persiste trazas y
-  reporta WEV/ELY. Las sondas de adaptación están desactivadas por defecto; no
-  es el ejecutor por defecto de cada mensaje.
+  reporta WEV/ELY. Harness² prueba cambios bajo un presupuesto pequeño y WEV;
+  Photon puede ajustar `desired_tokens` (128–4096, limitado por techo global).
+  No es el ejecutor por defecto de cada mensaje ni puede modificar permisos del SO.
 - `laya-main/` — el chat conecta `laya.decide` para que Photon compare alternativas
   antes de propuestas y decisiones materiales en ejecución; Codey puede invocarlo
   excepcionalmente. La primera llamada puede requerir dependencias de inferencia y

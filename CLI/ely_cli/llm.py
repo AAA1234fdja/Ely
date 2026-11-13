@@ -6,10 +6,12 @@ no hay red o la clave no es válida, se lanza `LLMError` con el detalle real.
 from __future__ import annotations
 
 import json
+import random
 import socket
 import ssl
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Iterator
@@ -17,6 +19,33 @@ from typing import Any, Iterator
 from .config import Profile
 
 USER_AGENT = "ElyCowork-CLI/0.9.0"
+MAX_RETRIES = 3
+RETRYABLE_HTTP = {429, 500, 502, 503, 504}
+
+
+def _open_with_retry(req: urllib.request.Request, timeout: int):
+    """Retry only transient connection/status failures, never auth or bad requests."""
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            return urllib.request.urlopen(req, timeout=timeout)
+        except urllib.error.HTTPError as exc:
+            if exc.code not in RETRYABLE_HTTP or attempt >= MAX_RETRIES:
+                raise
+            retry_after = exc.headers.get("Retry-After") if exc.headers else None
+            try:
+                delay = min(8.0, max(0.0, float(retry_after))) if retry_after else None
+            except (TypeError, ValueError):
+                delay = None
+            if delay is None:
+                delay = min(4.0, 0.35 * (2 ** attempt)) + random.uniform(0.0, 0.2)
+            exc.close()
+            time.sleep(delay)
+        except (urllib.error.URLError, socket.timeout, TimeoutError) as exc:
+            if attempt >= MAX_RETRIES:
+                raise
+            delay = min(4.0, 0.35 * (2 ** attempt)) + random.uniform(0.0, 0.2)
+            time.sleep(delay)
+    raise AssertionError("unreachable")
 
 
 class LLMError(RuntimeError):
@@ -49,6 +78,7 @@ class LLMResult:
     usage: Usage = field(default_factory=Usage)
     raw: dict[str, Any] | None = None
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    finish_reason: str = ""
 
 
 def _headers(profile: Profile) -> dict[str, str]:
@@ -190,22 +220,42 @@ def _explain_http_error(exc: urllib.error.HTTPError, body: bytes) -> LLMError:
     return LLMError(msg, status=exc.code, detail=detail)
 
 
-def _explain_network_error(exc: BaseException) -> LLMError:
+def _explain_network_error(exc: BaseException, url: str = "") -> LLMError:
     reason = getattr(exc, "reason", exc)
+    hostname = None
+    authority = "<host>"
+    if url:
+        try:
+            parsed_url = urllib.parse.urlsplit(url)
+            hostname = parsed_url.hostname
+            if hostname:
+                authority = f"[{hostname}]" if ":" in hostname else hostname
+                if parsed_url.port:
+                    authority += f":{parsed_url.port}"
+        except ValueError:
+            pass  # URL malformada: conserva el diagnóstico original sin filtrar datos.
+    host_hint = f" ({hostname})" if hostname else ""
     if isinstance(reason, socket.gaierror):
         return LLMError(
-            f"No se pudo resolver el host de la URL ({reason}). "
-            "Revisa la conexión o el DNS."
+            f"No se pudo resolver el host{host_hint} ({reason}). Revisa el DNS y la URL del perfil."
         )
     text = f"{type(reason).__name__}: {reason}"
-    if "SSL" in text or "EOF" in text or isinstance(reason, ssl.SSLError):
+    if isinstance(reason, ssl.SSLError) or "SSL" in text or "TLS" in text or "EOF" in text:
+        proxy_configured = bool(urllib.request.getproxies())
+        proxy_hint = (
+            " Python tiene un proxy configurado; revisa HTTPS_PROXY/https_proxy y NO_PROXY/no_proxy."
+            if proxy_configured else
+            " Python no detecta un proxy configurado."
+        )
         return LLMError(
-            "La conexión TLS se cerró durante el handshake. "
-            "Causa típica: un proxy de salida (sandbox/egress) bloquea este host. "
-            "Verifica con `curl -I <url>`; si también falla, no es la clave ni la URL.",
+            f"Falló el handshake TLS con el servidor{host_hint}; no se llegó a una respuesta HTTP, "
+            "por lo que este fallo no valida ni implica un problema con la API key."
+            f"{proxy_hint} Comprueba el mismo host con `curl -Iv https://{authority}`. "
+            "Si curl también falla, revisa el proxy/firewall de salida, DNS y certificados; "
+            "si curl funciona, compara la configuración de proxy y certificados usada por Python.",
             detail=text,
         )
-    return LLMError(f"Error de red: {text}")
+    return LLMError(f"Error de red{host_hint}: {text}")
 
 
 def complete(
@@ -218,12 +268,12 @@ def complete(
     req = _request(profile, payload, "application/json")
     started = time.monotonic()
     try:
-        with urllib.request.urlopen(req, timeout=profile.timeout) as resp:
+        with _open_with_retry(req, timeout=profile.timeout) as resp:
             raw = resp.read()
     except urllib.error.HTTPError as exc:
         raise _explain_http_error(exc, exc.read()) from exc
     except (urllib.error.URLError, socket.timeout, TimeoutError, OSError) as exc:
-        raise _explain_network_error(exc) from exc
+        raise _explain_network_error(exc, req.full_url) from exc
 
     elapsed = int((time.monotonic() - started) * 1000)
     try:
@@ -247,6 +297,7 @@ def complete(
         usage=usage,
         raw=data,
         tool_calls=_extract_tool_calls(data),
+        finish_reason=str(((data.get("choices") or [{}])[0] or {}).get("finish_reason") or data.get("stop_reason") or ""),
     )
 
 
@@ -314,7 +365,7 @@ def stream(
     openai_calls: dict[int, dict[str, Any]] = {}
     anthropic_calls: dict[int, dict[str, Any]] = {}
     try:
-        with urllib.request.urlopen(req, timeout=profile.timeout) as resp:
+        with _open_with_retry(req, timeout=profile.timeout) as resp:
             for raw_line in resp:
                 line = raw_line.decode("utf-8", "replace").strip()
                 if not line or line.startswith(":") or not line.startswith("data:"):
@@ -363,7 +414,7 @@ def stream(
     except urllib.error.HTTPError as exc:
         raise _explain_http_error(exc, exc.read()) from exc
     except (urllib.error.URLError, socket.timeout, TimeoutError, OSError) as exc:
-        raise _explain_network_error(exc) from exc
+        raise _explain_network_error(exc, req.full_url) from exc
 
     calls: list[dict[str, Any]] = []
     for index, call in sorted(openai_calls.items()):
@@ -420,14 +471,16 @@ def probe(profile: Profile, *, mode: str = "chat") -> dict[str, Any]:
             req = urllib.request.Request(url, headers={**_headers(profile), "Accept": "application/json"})
             with urllib.request.urlopen(req, timeout=profile.timeout) as resp:
                 body = json.loads(resp.read() or b"{}")
-            count = len(body.get("data") or body.get("models") or [])
+            rows = body.get("data") or body.get("models") or []
+            model_ids = [m.get("id") if isinstance(m, dict) else str(m)
+                         for m in rows if isinstance(m, (dict, str))]
             return {
                 **base,
                 "ok": True,
                 "status": 200,
                 "latency_ms": int((time.monotonic() - started) * 1000),
-                "detail": f"{count} modelos disponibles",
-                "models": [m.get("id") for m in (body.get("data") or []) if isinstance(m, dict)][:50],
+                "detail": f"{len(rows)} modelos disponibles",
+                "models": model_ids[:200],
             }
 
         result = complete(

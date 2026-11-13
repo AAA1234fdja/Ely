@@ -22,7 +22,8 @@
     customTitle: null,
     busy: false,
     abort: false,
-    loaded: false
+    loaded: false,
+    quality: null
   };
 
   const listeners = new Set();
@@ -90,6 +91,7 @@
       state.customTitle = null;
       state.loaded = false;
     }
+    try { state.quality = await API.quality(); } catch (e) { state.quality = null; }
     await refreshProjects();
     await refreshSessions();
     if (!state.sessionId) {
@@ -100,6 +102,18 @@
     }
     state.loaded = true;
     notify("init");
+  }
+
+  async function setQuality(level, testCommands) {
+    if (state.busy) throw new Error("No se puede cambiar la calidad durante una tarea.");
+    state.quality = await API.setQuality(level, testCommands);
+    notify("quality");
+    return state.quality;
+  }
+
+  async function refreshQuality() {
+    try { state.quality = await API.quality(); notify("quality"); } catch (e) { /* offline */ }
+    return state.quality;
   }
 
   function adoptSession(session) {
@@ -238,14 +252,18 @@
 
     try {
       if (!useStream) {
-        const result = await LLM.complete(clean, { agent, profile: profileId, history: hist });
+        const result = await LLM.complete(clean, { agent, profile: profileId, history: hist,
+          qualityLevel: state.quality && state.quality.level });
         acc = result.text || "";
         assistantMsg.content = acc;
         assistantMsg.meta.tokens = result.usage ? result.usage.total_tokens : 0;
+        assistantMsg.meta.quality = result.quality ? { status: result.quality.status } : null;
+        assistantMsg.meta.qualityReport = result.quality_report || "";
         markFirst();
         if (opts.onDelta) opts.onDelta(acc, assistantMsg);
       } else {
-        await LLM.stream(clean, { agent, profile: profileId, history: hist }, {
+        await LLM.stream(clean, { agent, profile: profileId, history: hist,
+          qualityLevel: state.quality && state.quality.level }, {
           onDelta: (chunk) => {
             if (state.abort) return;
             markFirst();
@@ -258,7 +276,11 @@
             assistantMsg.meta.activeTool = event.status === "running" ? String(event.name || "").slice(0, 80) : null;
             notify("tool");
           },
-          onDone: (event) => { if (event.usage) assistantMsg.meta.tokens = event.usage.total_tokens; },
+          onDone: (event) => {
+            if (event.usage) assistantMsg.meta.tokens = event.usage.total_tokens;
+            assistantMsg.meta.quality = event.quality ? { status: event.quality.status } : null;
+            assistantMsg.meta.qualityReport = event.quality_report || "";
+          },
           onError: (err) => {
             markFirst();
             assistantMsg.error = err.message + (err.detail ? "\n" + (typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail)) : "");
@@ -291,7 +313,7 @@
     state,
     subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     init, openChat, newChat, deleteChat, deleteAllChats, renameChat,
-    setProject, createProject, renameProject, deleteProject,
+    setProject, createProject, renameProject, deleteProject, setQuality, refreshQuality,
     send, stop, persist, refreshSessions, refreshProjects, title
   };
 })();

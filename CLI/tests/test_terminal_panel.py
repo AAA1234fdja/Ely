@@ -268,9 +268,17 @@ class FrontendPanelContractTests(unittest.TestCase):
         self.assertIn("term.splitLimit", self.term)
 
     def test_terminal_commands_go_to_the_backend_with_profile(self):
-        self.assertIn("API.terminal(text, p.cwd, p.profile)", self.term)
+        self.assertIn("API.terminal(text, p.cwd, p.profile, mode, mode === \"full\")", self.term)
         engine = read(JS / "engine.js")
-        self.assertIn("terminal: (command, cwd, profile)", engine)
+        self.assertIn("terminal: (command, cwd, profile, mode, confirmed)", engine)
+
+    def test_terminal_has_three_isolation_modes_and_explicit_full_confirmation(self):
+        for mode in ("read_only", "workspace", "full"):
+            self.assertIn(mode, self.term)
+        self.assertIn("window.confirm(\"Acceso total", self.term)
+        server = read(ROOT / "CLI" / "ely_cli" / "server.py")
+        self.assertIn('body.get("confirmed") is not True', server)
+        self.assertIn('raise ApiError(403, "El modo full requiere confirmación explícita', server)
 
     def test_clear_and_exit_are_local(self):
         self.assertIn('trimmed === "clear"', self.term)

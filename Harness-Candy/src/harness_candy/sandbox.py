@@ -1,45 +1,37 @@
-"""Sandbox efimero y red restringida para XEV (secciones 9 y 13).
+"""Fail-closed OS sandbox for Harness-Candy command execution.
 
-Harness^2 no restringe la red de su ejecutor por defecto: aqui el codigo
-generado SIEMPRE corre aislado:
-
-* directorio de trabajo efimero (se crea y se borra),
-* timeout estricto,
-* sin red por defecto: si ``unshare`` esta disponible se ejecuta dentro de
-  un namespace de red propio (``unshare -rn``); si no, se ejecuta con un
-  entorno minimo y se marca ``network_isolated=False`` para auditarlo,
-* variables de entorno minimas (sin credenciales heredadas).
-
-Objetivo del documento: 0 fallos de aislamiento en cada version.
+Commands run in a temporary filesystem visible only through bubblewrap. The
+workspace is not mounted; callers may provide narrowly scoped ``extra_files``.
+When bubblewrap or its namespaces are unavailable, commands are not executed.
 """
 from __future__ import annotations
 
+import base64
+import ctypes
+import json
 import os
+import platform
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-_UNSHARE_OK: bool | None = None
-
 
 def _probe_unshare() -> bool:
-    global _UNSHARE_OK
-    if _UNSHARE_OK is None:
+    """True when Landlock and a network namespace can be created."""
+    if platform.system() != "Linux" or platform.machine() not in {"x86_64", "aarch64", "armv7l", "riscv64", "i686", "i386"}:
+        return False
+    try:
+        libc = ctypes.CDLL(None, use_errno=True)
+        if libc.syscall(444, None, 0, 1) < 1:
+            return False
         unshare = shutil.which("unshare")
-        if not unshare:
-            _UNSHARE_OK = False
-        else:
-            try:
-                r = subprocess.run(
-                    [unshare, "-rn", "true"], capture_output=True, timeout=5
-                )
-                _UNSHARE_OK = r.returncode == 0
-            except Exception:
-                _UNSHARE_OK = False
-    return _UNSHARE_OK
+        return bool(unshare and subprocess.run([unshare, "-rn", "true"], capture_output=True, timeout=5).returncode == 0)
+    except Exception:
+        return False
 
 
 @dataclass
@@ -56,7 +48,7 @@ class SandboxResult:
 
     @property
     def ok(self) -> bool:
-        return self.returncode == 0 and not self.timed_out
+        return self.returncode == 0 and not self.timed_out and bool(self.extra.get("filesystem_isolated"))
 
     def to_dict(self) -> dict:
         return {
@@ -67,6 +59,7 @@ class SandboxResult:
             "timed_out": self.timed_out,
             "duration": round(self.duration, 3),
             "network_isolated": self.network_isolated,
+            "filesystem_isolated": bool(self.extra.get("filesystem_isolated")),
         }
 
 
@@ -78,58 +71,76 @@ def run_sandboxed(
     env: dict | None = None,
     extra_files: dict[str, str] | None = None,
 ) -> SandboxResult:
-    """Ejecuta ``command`` aislado. Devuelve SandboxResult con la evidencia."""
+    """Execute only with filesystem isolation; reject unsafe fallback paths."""
     cmd = [command] if isinstance(command, str) else list(command)
+    started = time.monotonic()
     workdir = tempfile.mkdtemp(prefix="xev-sandbox-")
-    if extra_files:
-        for name, content in extra_files.items():
-            (tempfile.Path(workdir) / name).write_text(content, encoding="utf-8")
-    isolated = False
-    final_cmd = list(cmd)
-    if not allow_network and _probe_unshare():
-        # -r: mapea el usuario a root dentro del namespace; -n: sin red;
-        # --kill-child: mata el proceso si el padre muere (util-linux >= 2.36)
-        final_cmd = ["unshare", "-rn", "--kill-child", *cmd]
-        isolated = True
-    base_env = {
-        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-        "HOME": workdir,
-        "LANG": "C.UTF-8",
-        "PYTHONDONTWRITEBYTECODE": "1",
-    }
-    if env:
-        base_env.update(env)
-    start = time.time()
-    timed_out = False
-    try:
-        proc = subprocess.run(
-            final_cmd,
-            cwd=workdir,
-            env=base_env,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-        rc, out, err = proc.returncode, proc.stdout, proc.stderr
-    except subprocess.TimeoutExpired as e:
-        timed_out = True
-        rc = -1
-        out = (e.stdout or b"").decode("utf-8", "replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
-        err = (e.stderr or b"").decode("utf-8", "replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
-        err += f"\n[timeout] comando excedio {timeout}s"
-    duration = time.time() - start
-    try:
+    if not _probe_unshare():
         shutil.rmtree(workdir, ignore_errors=True)
-    except Exception:
-        pass
-    return SandboxResult(
-        command=cmd,
-        returncode=rc,
-        stdout=out,
-        stderr=err,
-        timed_out=timed_out,
-        duration=duration,
-        workdir=workdir,
-        network_isolated=isolated,
-        extra={"cwd_efimero": True},
-    )
+        return SandboxResult(cmd, 126, "", "Ejecución bloqueada: Landlock/unshare no está disponible; no se ejecutó el comando.",
+                             False, time.monotonic() - started, workdir, False,
+                             {"cwd_efimero": True, "filesystem_isolated": False, "blocked": True})
+    try:
+        if extra_files:
+            for name, content in extra_files.items():
+                rel = Path(name)
+                if rel.is_absolute() or ".." in rel.parts or not rel.parts:
+                    raise ValueError("extra_files solo acepta rutas relativas dentro del sandbox")
+                target = Path(workdir) / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+        safe_env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": workdir,
+                    "TMPDIR": workdir, "LANG": "C.UTF-8", "PYTHONDONTWRITEBYTECODE": "1"}
+        if env:
+            for key, value in env.items():
+                if not any(mark in str(key).upper() for mark in ("KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL")):
+                    safe_env[str(key)] = str(value)
+        # Extra files are addressed inside the isolated temporary workspace.
+        sandbox_cmd = [str(arg).replace("/workspace/", workdir.rstrip("/") + "/") for arg in cmd]
+        config = base64.b64encode(json.dumps({"command": sandbox_cmd, "cwd": workdir,
+                                              "allow_network": allow_network}).encode()).decode()
+        bootstrap = r'''import base64,ctypes,json,os,sys
+c=json.loads(base64.b64decode(sys.argv[1])); libc=ctypes.CDLL(None,use_errno=True)
+abi=libc.syscall(444,None,0,1)
+if abi < 1: raise SystemExit("Landlock no disponible")
+base=sum(1<<n for n in range(13)); handled=base | ((1<<13) if abi>=2 else 0) | ((1<<14) if abi>=3 else 0)
+class R(ctypes.Structure): _fields_=[("handled_access_fs",ctypes.c_uint64)]
+class P(ctypes.Structure): _fields_=[("allowed_access",ctypes.c_uint64),("parent_fd",ctypes.c_int32)]
+r=libc.syscall(444,ctypes.byref(R(handled)),ctypes.sizeof(R),0)
+if r<0: raise OSError(ctypes.get_errno(),"landlock_create_ruleset")
+def add(path,rights):
+ fd=os.open(path,os.O_PATH|os.O_CLOEXEC)
+ try:
+  if libc.syscall(445,r,1,ctypes.byref(P(rights&handled,fd)),0)<0: raise OSError(ctypes.get_errno(),"landlock_add_rule")
+ finally: os.close(fd)
+read=(1<<0)|(1<<2)|(1<<3)
+for p in ("/usr","/proc","/dev"):
+ if os.path.exists(p): add(p,read)
+work=read | sum(1<<n for n in (1,4,5,7,8,9,10,12,13,14) if (n<13 or abi>=2) and (n<14 or abi>=3))
+add(c["cwd"],work)
+if os.path.exists("/tmp"): add("/tmp",(1<<0)|(1<<3))
+if libc.prctl(38,1,0,0,0)!=0: raise OSError(ctypes.get_errno(),"no_new_privs")
+if libc.syscall(446,r,0)!=0: raise OSError(ctypes.get_errno(),"landlock_restrict_self")
+os.close(r)
+cmd=c["command"]; os.execvpe(cmd[0],cmd,os.environ)
+'''
+        unshare = shutil.which("unshare")
+        flags = "-r" + ("" if allow_network else "n")
+        wrapped = [unshare, flags, "--kill-child", sys.executable, "-c", bootstrap, config]
+        proc = subprocess.run(wrapped, cwd=workdir, env=safe_env, capture_output=True,
+                              text=True, timeout=timeout)
+        return SandboxResult(cmd, proc.returncode, proc.stdout, proc.stderr, False,
+                             time.monotonic() - started, workdir, not allow_network,
+                             {"cwd_efimero": True, "filesystem_isolated": True, "isolation": "landlock+user-namespace"})
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout.decode("utf-8", "replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+        stderr = exc.stderr.decode("utf-8", "replace") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+        return SandboxResult(cmd, 124, stdout, stderr + f"\n[timeout] comando excedio {timeout}s", True,
+                             time.monotonic() - started, workdir, not allow_network,
+                             {"cwd_efimero": True, "filesystem_isolated": True})
+    except (OSError, subprocess.SubprocessError) as exc:
+        return SandboxResult(cmd, 126, "", f"Ejecución bloqueada: no se pudo establecer el sandbox: {exc}",
+                             False, time.monotonic() - started, workdir, False,
+                             {"cwd_efimero": True, "filesystem_isolated": False, "blocked": True})
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)

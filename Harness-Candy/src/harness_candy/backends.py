@@ -7,12 +7,12 @@ Reglas de seguridad (seccion 9/13 del diseno):
 * la API key NUNCA se escribe en el codigo ni en el repo: se lee de una
   variable de entorno (por defecto ``XKIRO_API_KEY``);
 * el endpoint es configurable (``XKIRO_BASE_URL``), por defecto
-  ``https://api.xkiro.ai/v1``;
+  ``https://api.xkiro.com/v1``;
 * hay timeout estricto y los errores HTTP se reportan sin filtrar la clave.
 
 Uso:
     export XKIRO_API_KEY="sk-..."          # en TU entorno, no en el repo
-    export XKIRO_BASE_URL="https://api.xkiro.ai/v1"   # opcional
+    export XKIRO_BASE_URL="https://api.xkiro.com/v1"   # opcional
     export XKIRO_MODEL="nombre-del-modelo"            # opcional
 
     from harness_candy.backends import OpenAICompatibleBackend
@@ -27,7 +27,7 @@ import urllib.error
 import urllib.request
 from typing import Optional
 
-DEFAULT_BASE_URL = "https://api.xkiro.ai/v1"
+DEFAULT_BASE_URL = "https://api.xkiro.com/v1"
 
 
 class BackendError(RuntimeError):

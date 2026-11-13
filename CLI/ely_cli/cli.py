@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import __version__, extensions, llm, mcp, repos
+from . import __version__, extensions, llm, mcp, repos, quality
 from .agents import AGENTS, get_agent, workflows
 from .config import ConfigError, load_profiles, repo_root, resolve_key
 from .engine import Engine
@@ -127,6 +127,29 @@ def cmd_agents(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_quality(args: argparse.Namespace) -> int:
+    engine = Engine()
+    try:
+        if args.test_command is not None or args.clear_test_commands:
+            state = quality.set_level(engine.root, args.level or quality.current(engine.root),
+                                      [] if args.clear_test_commands else args.test_command)
+        elif args.level:
+            state = quality.set_level(engine.root, args.level)
+        else:
+            state = quality.settings(engine.root)
+    except ValueError as exc:
+        return fail(str(exc))
+    print(bold(f"\n  Calidad activa: {state['level']} · sugerida: {state['suggested']}"))
+    print(dim("  Niveles: " + " · ".join(state["levels"])))
+    print(dim("  Criterios ejecutables detectados:"))
+    for item in state["criteria"]:
+        print(dim("   ✓ " + (item.get("command") or item.get("reason", "sin criterio medible"))))
+    if state.get("model_metrics"):
+        print(dim("  Cumplimiento de primer intento por modelo/nivel: " + json.dumps(state["model_metrics"], ensure_ascii=False)))
+    print()
+    return 0
+
+
 def cmd_test(args: argparse.Namespace) -> int:
     engine = Engine()
     profiles = load_profiles(engine.root)
@@ -195,28 +218,35 @@ def cmd_ask(args: argparse.Namespace) -> int:
     if not prompt:
         return fail("Falta el texto. Uso: ely ask \"tu pregunta\"")
     agent = get_agent(args.agent)
+    active_quality = getattr(args, "quality", None) or quality.current(engine.root)
     if args.json or args.no_stream:
         result = engine.ask(
             prompt, profile_id=args.profile, agent_id=agent.id,
             max_tokens=args.max_tokens, temperature=args.temperature,
             context=engine.build_context() if args.memory else None,
+            quality_level=getattr(args, "quality", None),
         )
         if args.json:
             print(json.dumps(result, indent=2, ensure_ascii=False))
         else:
             print(result["text"])
+            if result.get("quality_report"):
+                print(dim("\n  " + result["quality_report"]))
         return 0
     if not args.quiet:
-        print(dim(f"  {agent.name} · perfil {args.profile or 'default'} · streaming\n"))
+        print(dim(f"  {agent.name} · perfil {args.profile or 'default'} · calidad {active_quality} · streaming\n"))
     for event in engine.stream(
         prompt, profile_id=args.profile, agent_id=agent.id,
         context=engine.build_context() if args.memory else None,
+        quality_level=getattr(args, "quality", None),
     ):
         if event["type"] == "delta":
             sys.stdout.write(event["text"])
             sys.stdout.flush()
         elif event["type"] == "done":
             usage = event.get("usage") or {}
+            if event.get("quality_report"):
+                print(dim("\n  " + event["quality_report"]))
             print()
             if not args.quiet:
                 print(dim(f"\n  {usage.get('total_tokens', 0)} tokens · "
@@ -248,6 +278,7 @@ def cmd_chat(args: argparse.Namespace) -> int:
     agent_id = agent.id
     profile_id = args.profile
     project = getattr(args, "project", None) or "general"
+    quality_level = quality.current(engine.root)
 
     projects = {p["id"]: p for p in engine.chat_projects(profile_id)}
     if project not in projects:
@@ -283,8 +314,8 @@ def cmd_chat(args: argparse.Namespace) -> int:
 
     banner()
     print(f"  Agente: {bold(agent.name)} · perfil: {bold(profile_id or 'default')} · proyecto: {bold(project)}")
-    print(dim(f"  conversación: {session['id']} · {len(messages)} mensajes previos"))
-    print(dim("  /nuevo  /chats  /borrar <id>  /proyecto <id>  /proyectos  /agente <id>  /perfil <id>  /salir\n"))
+    print(dim(f"  conversación: {session['id']} · {len(messages)} mensajes previos · calidad: {quality_level}"))
+    print(dim("  /nuevo  /chats  /borrar <id>  /proyecto <id>  /proyectos  /agente <id>  /perfil <id>  /calidad [nivel]  /salir\n"))
     while True:
         try:
             line = input(violet("  ❯ ") if not NO_COLOR else "❯ ").strip()
@@ -347,6 +378,22 @@ def cmd_chat(args: argparse.Namespace) -> int:
             agent_id = line.split(" ", 1)[1].strip()
             print(dim(f"  agente → {agent_id}"))
             continue
+        if line == "/calidad" or line.startswith("/calidad "):
+            requested = line.partition(" ")[2].strip()
+            if not requested:
+                state = quality.settings(engine.root)
+                print(dim("  Nivel: " + quality_level + " · sugerido: " + state["suggested"]))
+                print(dim("  Opciones: " + " · ".join(state["levels"])))
+                for criterion in state["criteria"]:
+                    print(dim("  Criterio: " + (criterion.get("command") or criterion.get("reason", "sin criterio"))))
+                continue
+            try:
+                state = quality.set_level(engine.root, requested)
+                quality_level = state["level"]
+                print(dim(f"  calidad → {quality_level}"))
+            except ValueError as exc:
+                print(bad(str(exc)))
+            continue
         if line.startswith("/perfil "):
             profile_id = line.split(" ", 1)[1].strip()
             print(dim(f"  perfil → {profile_id}"))
@@ -360,10 +407,13 @@ def cmd_chat(args: argparse.Namespace) -> int:
         persist()          # se guarda aunque la respuesta falle
         answer: list[str] = []
         error_msg = ""
+        quality_result = None
+        quality_report = ""
         try:
             for event in engine.stream(
                 line, profile_id=profile_id, agent_id=agent_id, history=history[-13:-1],
                 context=engine.build_context() if args.memory else None,
+                quality_level=quality_level,
             ):
                 if event["type"] == "delta":
                     answer.append(event["text"])
@@ -377,11 +427,17 @@ def cmd_chat(args: argparse.Namespace) -> int:
                     break
                 elif event["type"] == "done":
                     usage = event.get("usage") or {}
+                    quality_result = event.get("quality")
+                    quality_report = event.get("quality_report") or ""
+                    if quality_report:
+                        print(dim("\n  " + event["quality_report"]))
                     print(dim(f"\n  [{usage.get('total_tokens', 0)} tokens]"))
         except KeyboardInterrupt:
             print(dim("\n  cancelado"))
         text = "".join(answer)
-        assistant_msg: dict[str, Any] = {"role": "assistant", "content": text}
+        assistant_msg: dict[str, Any] = {"role": "assistant", "content": text,
+                                         "meta": {"quality": {"status": quality_result.get("status")} if quality_result else None,
+                                                  "qualityReport": quality_report}}
         if error_msg:
             assistant_msg["error"] = error_msg
         messages.append(assistant_msg)
@@ -849,6 +905,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("agents", help="lista agentes")
     p.set_defaults(func=cmd_agents)
 
+    p = sub.add_parser("quality", help="consulta o cambia el nivel y sus verificadores")
+    p.add_argument("level", nargs="?", choices=tuple(quality.LEVEL_BY_ID))
+    p.add_argument("--test-command", action="append", help="añade comando de aceptación ejecutable en sandbox (repetible)")
+    p.add_argument("--clear-test-commands", action="store_true", help="elimina comandos personalizados y vuelve a autodetectar")
+    p.set_defaults(func=cmd_quality)
+
     p = sub.add_parser("test", help="prueba real de URL + API Key")
     p.add_argument("profile_pos", nargs="?", metavar="perfil", help="id del perfil")
     p.add_argument("-p", "--profile", help="id del perfil")
@@ -863,6 +925,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-p", "--profile")
     p.add_argument("--max-tokens", type=int)
     p.add_argument("--temperature", type=float)
+    p.add_argument("--quality", choices=tuple(quality.LEVEL_BY_ID), help="piso de calidad de esta tarea")
     p.add_argument("--memory", action="store_true", help="incluir memoria del proyecto")
     p.add_argument("--no-stream", action="store_true")
     p.add_argument("--quiet", action="store_true")

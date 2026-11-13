@@ -54,28 +54,43 @@ class TestSeguridadSalida(unittest.TestCase):
 
 
 class TestSandbox(unittest.TestCase):
-    def test_ejecuta_comando(self):
+    def test_ejecuta_comando_or_fails_closed(self):
         r = run_sandboxed([sys.executable, "-c", "print('hola')"], timeout=15)
-        self.assertTrue(r.ok)
-        self.assertIn("hola", r.stdout)
+        if not _probe_unshare():
+            self.assertFalse(r.ok)
+            self.assertTrue(r.extra.get("blocked"))
+            self.assertNotIn("hola", r.stdout)
+        else:
+            self.assertTrue(r.ok)
+            self.assertIn("hola", r.stdout)
 
-    def test_timeout(self):
+    def test_timeout_or_fails_closed(self):
         r = run_sandboxed([sys.executable, "-c", "import time; time.sleep(30)"], timeout=1.5)
-        self.assertTrue(r.timed_out)
-        self.assertFalse(r.ok)
+        if not _probe_unshare():
+            self.assertFalse(r.ok)
+            self.assertFalse(r.timed_out)
+        else:
+            self.assertTrue(r.timed_out)
+            self.assertFalse(r.ok)
 
     def test_workdir_efimero_eliminado(self):
         r = run_sandboxed([sys.executable, "-c", "import os; print(os.getcwd())"], timeout=15)
-        workdir = Path(r.stdout.strip())
-        self.assertFalse(workdir.exists())  # ya se borro
+        self.assertFalse(Path(r.workdir).exists())
+        if r.ok:
+            self.assertEqual(r.stdout.strip(), r.workdir)
 
     def test_sin_credenciales_heredadas(self):
         import os
 
         os.environ["MI_SECRETO_PRUEBA"] = "valor-secreto"
-        r = run_sandboxed([sys.executable, "-c", "import os; print(os.environ.get('MI_SECRETO_PRUEBA', 'NO-ESTA'))"], timeout=15)
-        self.assertIn("NO-ESTA", r.stdout)
-        del os.environ["MI_SECRETO_PRUEBA"]
+        try:
+            r = run_sandboxed([sys.executable, "-c", "import os; print(os.environ.get('MI_SECRETO_PRUEBA', 'NO-ESTA'))"], timeout=15)
+        finally:
+            del os.environ["MI_SECRETO_PRUEBA"]
+        if r.ok:
+            self.assertIn("NO-ESTA", r.stdout)
+        else:
+            self.assertNotIn("valor-secreto", r.stdout + r.stderr)
 
     @unittest.skipUnless(shutil.which("unshare") and _probe_unshare(), "unshare no disponible en este entorno")
     def test_red_aislada(self):

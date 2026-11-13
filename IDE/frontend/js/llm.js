@@ -18,6 +18,8 @@
         history: o.history || [],
         context: o.context || null,
         use_memory: o.useMemory === undefined ? Store.get("memory") : o.useMemory,
+        quality_level: o.qualityLevel || null,
+        model: o.model || null,
         max_tokens: o.maxTokens,
         temperature: o.temperature
       });
@@ -32,7 +34,9 @@
         profile: o.profile || Store.get("profile"),
         history: o.history || [],
         context: o.context || null,
-        use_memory: o.useMemory === undefined ? Store.get("memory") : o.useMemory
+        use_memory: o.useMemory === undefined ? Store.get("memory") : o.useMemory,
+        quality_level: o.qualityLevel || null,
+        model: o.model || null
       }, handlers || {});
     },
 

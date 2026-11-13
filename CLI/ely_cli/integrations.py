@@ -13,7 +13,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from . import llm
+from . import key_pool, llm
 
 _LAYA_LOCK = threading.Lock()
 _LAYA_ROUTER: Any = None
@@ -23,37 +23,54 @@ _LAYA_ERROR = ""
 class _ProfileBackend:
     """Harness-Candy LLMBackend adapter over the active Ely chat profile."""
 
-    def __init__(self, profile: Any, *, max_calls: int = 12, on_call=None):
+    def __init__(self, profile: Any, *, root: Path | None = None, max_calls: int = 12, on_call=None,
+                 token_target: int | None = None, token_ceiling: int = 4096):
         self.profile = profile
+        self.root = root
         self.max_calls = max_calls
+        self.token_ceiling = min(4096, max(128, int(token_ceiling)))
+        self.token_target = min(self.token_ceiling, max(128, int(token_target or profile.max_tokens)))
         self.calls = 0
         self.last_usage: dict[str, Any] = {}
         self.on_call = on_call
 
-    def complete(self, prompt: str, *, system: str = "", model: str = "", seed: int = 0) -> str:
-        self.calls += 1
-        if self.calls > self.max_calls:
-            raise RuntimeError(f"Harness-Candy alcanzó el límite de {self.max_calls} llamadas al modelo")
+    def complete(self, prompt: str, *, system: str = "", model: str = "", seed: int = 0,
+                 max_tokens: int | None = None) -> str:
         messages = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
+        token_cap = min(self.token_ceiling, max(128, int(max_tokens or self.token_target)))
+        result = None
+        active_profile = self.profile
+        role = "planner" if "Eres ISA" in system else "coder"
         try:
-            result = llm.complete(
-                self.profile,
-                messages,
-                model=self.profile.model,
-                temperature=self.profile.temperature,
-                max_tokens=min(self.profile.max_tokens, 3000),
-            )
+            for attempt in range(2):
+                self.calls += 1
+                if self.calls > self.max_calls:
+                    raise RuntimeError(f"Harness-Candy alcanzó el límite de {self.max_calls} llamadas al modelo")
+                overrides = {"model": self.profile.model, "temperature": self.profile.temperature,
+                             "max_tokens": token_cap}
+                if self.root is not None:
+                    active_profile, result = key_pool.complete(self.root, self.profile, role, messages, **overrides)
+                    self.profile = active_profile
+                else:
+                    result = llm.complete(self.profile, messages, **overrides)
+                truncated = result.finish_reason.lower() in {"length", "max_tokens", "token_limit"}
+                if attempt == 0 and (truncated or not result.text.strip()) and token_cap < self.token_ceiling:
+                    token_cap = min(self.token_ceiling, max(token_cap + 256, token_cap * 2))
+                    continue
+                break
         except llm.LLMError as exc:
             if self.on_call:
-                self.on_call(self.profile, None, {}, "harness-candy", ok=False,
+                self.on_call(active_profile, None, {}, "harness-candy", ok=False,
                              prompt=prompt, error=str(exc), status=exc.status)
             raise
+        if result is None:
+            raise RuntimeError("Harness-Candy no recibió una respuesta")
         self.last_usage = result.usage.as_dict()
         if self.on_call:
-            self.on_call(self.profile, None, self.last_usage, "harness-candy", ok=True,
+            self.on_call(active_profile, None, self.last_usage, "harness-candy", ok=True,
                          prompt=prompt, completion=result.text, model=result.model)
         if "Eres ISA" in system:
             try:
@@ -88,20 +105,34 @@ def run_harness_candy(root: Path, profile: Any, objective: str, seed: int = 0, *
 
     package = _harness_package(root)
     from harness_candy.factory import build_runner
-    from harness_candy.harness import Budget, HarnessStore
+    from harness_candy.harness import Budget, Harness, HarnessStore
 
     state = root / ".ely" / "harness-candy"
-    backend = _ProfileBackend(profile, on_call=on_call)
+    policy_path = root / ".ely" / "harness-policy.json"
+    try:
+        policy = json.loads(policy_path.read_text(encoding="utf-8")) if policy_path.is_file() else {}
+    except (json.JSONDecodeError, OSError):
+        policy = {}
+    token_ceiling = policy.get("token_ceiling", 4096)
+    token_target = policy.get("desired_tokens", profile.max_tokens)
+    if isinstance(token_ceiling, bool) or not isinstance(token_ceiling, int):
+        token_ceiling = 4096
+    if isinstance(token_target, bool) or not isinstance(token_target, int):
+        token_target = profile.max_tokens
+    backend = _ProfileBackend(profile, root=root, on_call=on_call,
+                              token_target=token_target, token_ceiling=token_ceiling, max_calls=64)
     runner = build_runner(
         trace_dir=state / "traces",
         backend=backend,
         backend_kind="scripted",  # the bridge above, not factory defaults, calls the active profile
         store=HarnessStore(path=state / "harness-store.json"),
-        budget=Budget(total=0.0, beta=0.0),  # avoid unbounded adaptation/probe spend by default
+        budget=Budget(total=36.0, beta=0.25, k=1, m=3),  # a maximum of four bounded probe batches per run
         max_concurrency=2,
         use_security_scan_agent=False,
         isa_backend=backend,
     )
+    # Harness² token proposals begin from the main agent's persistent target.
+    runner.xev.agents["XEV"].default_harness = Harness(max_tokens_target=min(4096, max(128, token_target)))
     result = runner.run(objective, inputs={"root": str(root.resolve())}, seed=seed)
     tasks = []
     for task_id, node_result in result.dag_results.items():
@@ -126,7 +157,10 @@ def run_harness_candy(root: Path, profile: Any, objective: str, seed: int = 0, *
         "duration_seconds": round(result.duracion, 3),
         "trace_path": result.trace_path,
         "model_calls": backend.calls,
-        "adaptation_budget": "disabled by default; no adaptation probes were run",
+        "adaptation_budget": {"enabled": True, "total_units": 36, "beta": 0.25,
+                              "probe_units_spent": result.costo_adaptacion,
+                              "token_target": backend.token_target, "token_ceiling": backend.token_ceiling,
+                              "note": "Harness² proposals are gated by WEV and bounded to max_tokens, prompts, skills, and guardrails; OS permissions are not mutable."},
     }
 
 
@@ -235,8 +269,22 @@ def decide_with_laya(root: Path, request: str, options: dict[str, str], *, profi
 
 def backend_status(root: Path) -> dict[str, Any]:
     from .mcp_client import status as mcp_status
+    from .key_pool import status as key_pool_status
+    try:
+        token_policy = json.loads((root / ".ely" / "harness-policy.json").read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        token_policy = {}
     return {
         "chat_llm": {"integrated": True, "provider_configured_per_profile": True},
+        "key_pool": key_pool_status(root),
+        "command_isolation": {
+            "available": __import__("ely_cli.command_sandbox", fromlist=["available"]).available(),
+            "modes": ["read_only", "workspace", "full"],
+            "agent_fallback": "fail_closed",
+        },
+        "token_policy": {"desired_tokens": token_policy.get("desired_tokens"),
+                         "ceiling": token_policy.get("token_ceiling", 4096),
+                         "task_budget_tokens": token_policy.get("task_budget_tokens", 12000)},
         "harness_candy": {
             "integrated": (root / "Harness-Candy" / "src" / "harness_candy" / "__init__.py").is_file(),
             "mode": "lazy CoworkRunner bridge using the selected Ely profile",

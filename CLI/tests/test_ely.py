@@ -13,6 +13,8 @@ import sys
 import threading
 import unittest
 from dataclasses import replace
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -118,6 +120,10 @@ class ProviderTest(unittest.TestCase):
             llm.complete(self.profile(key="otra-clave"), [{"role": "user", "content": "x"}])
         self.assertEqual(ctx.exception.status, 401)
 
+    def test_complete_uses_selected_model_override(self):
+        result = llm.complete(self.profile(), [{"role": "user", "content": "hola"}], model="ely-echo-v2")
+        self.assertEqual(result.model, "ely-echo-v2")
+
     def test_stream_yields_deltas_and_usage(self):
         events = list(llm.stream(self.profile(), [{"role": "user", "content": "x"}]))
         text = "".join(e["text"] for e in events if e["type"] == "delta")
@@ -150,6 +156,37 @@ class ProviderTest(unittest.TestCase):
         calls = engine.calls(5)
         self.assertTrue(any(c["id"] == call_id for c in calls))
         self.assertIn("total_calls", engine.stats())
+
+    def test_engine_chat_uses_selected_model_for_completion(self):
+        with TemporaryDirectory() as tmp:
+            engine = Engine(Path(tmp))
+            profile = self.profile()
+            engine.profile = lambda _profile_id=None: profile
+            engine._tool_specs = lambda _agent: []
+
+            def complete(_root, selected_profile, _role, _messages, **_kwargs):
+                self.assertEqual(selected_profile.model, "ely-echo-v2")
+                result = llm.LLMResult(text="selected", model=selected_profile.model, usage=llm.Usage())
+                return selected_profile, result
+
+            with patch("ely_cli.engine.key_pool.complete", side_effect=complete):
+                result = engine.ask("hello", agent_id="photon", quality_level="Low", model="ely-echo-v2")
+            self.assertEqual(result["model"], "ely-echo-v2")
+
+    def test_engine_stream_uses_selected_model(self):
+        with TemporaryDirectory() as tmp:
+            engine = Engine(Path(tmp))
+            profile = self.profile()
+            engine.profile = lambda _profile_id=None: profile
+            engine._tool_specs = lambda _agent: []
+
+            def stream(_root, selected_profile, _role, _messages, **_kwargs):
+                self.assertEqual(selected_profile.model, "ely-echo-v2")
+                yield selected_profile, {"type": "usage", "usage": {}}
+
+            with patch("ely_cli.engine.key_pool.stream", side_effect=stream):
+                events = list(engine.stream("hello", agent_id="photon", quality_level="Low", model="ely-echo-v2"))
+            self.assertEqual(events[0]["model"], "ely-echo-v2")
 
 
 class ConfigTest(unittest.TestCase):

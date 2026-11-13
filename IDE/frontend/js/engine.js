@@ -158,6 +158,10 @@
     profiles: () => request("/profiles"),
     agents: () => request("/agents"),
     workflows: () => request("/workflows"),
+    quality: () => request("/quality"),
+    setQuality: (level, testCommands) => request("/quality", { method: "POST", body: {
+      level, ...(Array.isArray(testCommands) ? { test_commands: testCommands } : {})
+    } }),
     testProfile: (id, mode) => request("/profiles/test", { method: "POST", body: { id, mode: mode || "chat" } }),
     testAll: () => request("/profiles/test-all", { method: "POST", body: {} }),
     setDefaultProfile: (id) => request("/profiles/default", { method: "POST", body: { id } }),
@@ -185,7 +189,7 @@
     createProject: (name, template) => request("/workspace/project", { method: "POST", body: { name, template } }),
     searchWorkspace: (q) => request("/workspace/search?q=" + encodeURIComponent(q)),
     uploadWorkspace: (path, content_b64) => request("/workspace/upload", { method: "POST", body: { path, content_b64 } }),
-    terminal: (command, cwd, profile) => request("/terminal/exec", { method: "POST", body: { command, cwd, profile } }),
+    terminal: (command, cwd, profile, mode, confirmed) => request("/terminal/exec", { method: "POST", body: { command, cwd, profile, mode, confirmed } }),
     ide: (op, args) => request("/ide/call", { method: "POST", body: { op, args: args || {} } }),
     ideCall: (op, args) => request("/ide/call", { method: "POST", body: { op, args: args || {} } }),
     /* Extensiones: instalación, permisos y proxy de red con permisos. */

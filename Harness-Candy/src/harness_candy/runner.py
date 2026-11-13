@@ -46,8 +46,7 @@ def run_task(
     clave, model = pool.select(task.kind)
     agent = agent.with_model(model)
     h = store.lookup(task.kind, model)
-    if h is None and budget.allows_probe(c_a=1.0):
-        budget.charge(c_a=1.0)
+    if h is None and budget.try_charge(c_a=1.0):
         adapter = adapter or Harness2Adapter(tracer=tracer, run_id=run_id)
         h, evidence = adapter.adapt(agent, task, k=budget.k, m=budget.m, score_fn=wev.score, base_seed=seed)
         store.save(task.kind, model, h, evidence=evidence.to_dict(), q_mean=sum(evidence.reference_scores) / max(1, len(evidence.reference_scores)))

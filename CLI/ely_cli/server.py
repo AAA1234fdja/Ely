@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 
-from . import __version__, llm, mcp, mcp_client, repos, routes, workspace
+from . import __version__, key_pool, llm, mcp, mcp_client, quality, repos, routes, workspace
 from .agents import AGENTS, AGENTS_BY_ID, get_agent, tools, workflows
 from .config import (
     ConfigError,
@@ -237,6 +237,18 @@ class ElyHandler(BaseHTTPRequestHandler):
                 results.append(probe)
             return self.json({"results": results})
 
+        if method == "GET" and route == "/quality":
+            return self.json(quality.settings(engine.root))
+
+        if method == "POST" and route == "/quality":
+            body = self.read_json()
+            try:
+                state = quality.set_level(engine.root, body.get("level", quality.current(engine.root)),
+                                          body.get("test_commands"))
+            except ValueError as exc:
+                raise ApiError(409 if "tarea en ejecución" in str(exc) else 400, str(exc)) from exc
+            return self.json(state)
+
         if method == "GET" and route == "/agents":
             return self.json({
                 "agents": [agent.as_dict(bool(agent.tools)) for agent in AGENTS],
@@ -266,6 +278,38 @@ class ElyHandler(BaseHTTPRequestHandler):
         if method == "GET" and route == "/backends":
             return self.json(engine.backend_status())
 
+        if method == "GET" and route == "/harness/policy":
+            return self.json(engine.harness_policy())
+
+        if method == "POST" and route == "/harness/policy":
+            try:
+                return self.json(engine.set_harness_policy(self.read_json()))
+            except ConfigError as exc:
+                raise ApiError(400, str(exc)) from exc
+
+        if method == "GET" and route == "/key-pool":
+
+            q = self.query()
+            profile = engine.profile(q.get("profile"))
+            role = q.get("role") or "chat"
+            return self.json(key_pool.status(engine.root, profile.id, role))
+
+        if method == "POST" and route == "/key-pool/validate":
+            body = self.read_json()
+            try:
+                result = key_pool.validate_profile(engine.root, str(body.get("profile") or ""),
+                                                   force=bool(body.get("force", False)))
+            except ValueError as exc:
+                raise ApiError(404, str(exc)) from exc
+            return self.json(result)
+
+        if method == "POST" and route == "/key-pool/roles":
+            body = self.read_json()
+            try:
+                return self.json(key_pool.configure_roles(engine.root, body.get("roles")))
+            except ValueError as exc:
+                raise ApiError(400, str(exc)) from exc
+
         if method == "GET" and route == "/stats":
             return self.json(engine.stats())
 
@@ -279,6 +323,11 @@ class ElyHandler(BaseHTTPRequestHandler):
                 raise ApiError(400, "El campo 'prompt' es obligatorio")
             history = body.get("history") if isinstance(body.get("history"), list) else []
             context = engine.request_context(body.get("context"), bool(body.get("use_memory")))
+            if body.get("quality_level") is not None and body.get("quality_level") not in quality.LEVEL_BY_ID:
+                raise ApiError(400, "Nivel de calidad inválido")
+            model = body.get("model")
+            if model is not None and (not isinstance(model, str) or not model.strip() or len(model) > 200 or not model.isprintable()):
+                raise ApiError(400, "Modelo inválido")
             return self.json(engine.ask(
                 prompt,
                 profile_id=body.get("profile"),
@@ -287,6 +336,8 @@ class ElyHandler(BaseHTTPRequestHandler):
                 context=context,
                 max_tokens=body.get("max_tokens"),
                 temperature=body.get("temperature"),
+                quality_level=body.get("quality_level"),
+                model=model,
             ))
 
         if method == "POST" and route == "/cowork/run":
@@ -310,12 +361,19 @@ class ElyHandler(BaseHTTPRequestHandler):
                 raise ApiError(400, "El campo 'prompt' es obligatorio")
             history = body.get("history") if isinstance(body.get("history"), list) else []
             context = engine.request_context(body.get("context"), bool(body.get("use_memory")))
+            if body.get("quality_level") is not None and body.get("quality_level") not in quality.LEVEL_BY_ID:
+                raise ApiError(400, "Nivel de calidad inválido")
+            model = body.get("model")
+            if model is not None and (not isinstance(model, str) or not model.strip() or len(model) > 200 or not model.isprintable()):
+                raise ApiError(400, "Modelo inválido")
             return self.sse(engine.stream(
                 prompt,
                 profile_id=body.get("profile"),
                 agent_id=body.get("agent"),
                 history=history,
                 context=context,
+                quality_level=body.get("quality_level"),
+                model=model,
             ))
 
         if method == "GET" and route == "/sessions":
@@ -523,10 +581,16 @@ class ElyHandler(BaseHTTPRequestHandler):
 
         if method == "POST" and route == "/terminal/exec":
             body = self.read_json()
-            return self.json(engine.run_command(
-                str(body.get("command") or ""), str(body.get("cwd") or ""),
-                str(body.get("profile") or "")
-            ))
+            mode = str(body.get("mode") or "full")
+            if mode == "full" and body.get("confirmed") is not True:
+                raise ApiError(403, "El modo full requiere confirmación explícita para cada comando")
+            try:
+                return self.json(engine.run_command(
+                    str(body.get("command") or ""), str(body.get("cwd") or ""),
+                    str(body.get("profile") or ""), mode=mode
+                ))
+            except ValueError as exc:
+                raise ApiError(400, str(exc)) from exc
 
         if method == "GET" and route == "/assets":
             return self.json(workspace.assets(engine.root))

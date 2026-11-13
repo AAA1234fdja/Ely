@@ -4,7 +4,7 @@
 Requisitos (en TU entorno; la clave nunca se guarda en el repo):
 
     export XKIRO_API_KEY="sk-..."                       # tu clave de xkiro
-    export XKIRO_BASE_URL="https://api.xkiro.ai/v1"     # opcional (ese es el default)
+    export XKIRO_BASE_URL="https://api.xkiro.com/v1"     # opcional (ese es el default)
     export XKIRO_MODEL="nombre-del-modelo"              # opcional si la API lo exige
 
     python examples/demo_xkiro.py

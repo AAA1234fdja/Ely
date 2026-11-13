@@ -1,11 +1,13 @@
 """Herramientas acotadas para el bucle agéntico de Ely.
 
-El acceso a archivos y comandos se restringe al workspace y excluye secretos y
-componentes vendorados. Los comandos corren con los permisos normales del
-proceso de Ely; esto no constituye una sandbox de sistema operativo.
+El acceso a archivos restringe rutas privadas y vendoradas. Los comandos de
+agente se ejecutan en snapshot temporal mediante aislamiento del sistema
+operativo; si el host no lo ofrece, la ejecución falla cerrada. El modo full
+queda reservado a comandos escritos y ejecutados directamente por el usuario.
 """
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -85,14 +87,46 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "function",
         "function": {
             "name": "workspace.run_command",
-            "description": "Ejecuta un comando de desarrollo en el workspace (máximo 20 segundos). Se ejecuta con los permisos normales de Ely, no dentro de una sandbox del sistema operativo; no lo uses para borrar datos, cambiar permisos, desplegar, acceder a secretos o hacer operaciones externas. Reporta exactamente el comando y su salida.",
+            "description": "Ejecuta un comando en un sandbox del sistema operativo sin acceso a red externa ni secretos; solo loopback está disponible dentro del namespace aislado. El modo read_only no permite cambios; workspace ejecuta sobre una copia aislada y devuelve un diff sin aplicar. Si no hay un sandbox real disponible, la ejecución falla cerrada. El acceso full solo está disponible mediante acción directa del usuario en la terminal.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "command": {"type": "string", "minLength": 1, "maxLength": MAX_COMMAND_CHARS},
                     "cwd": {"type": "string", "maxLength": 500},
+                    "mode": {"type": "string", "enum": ["read_only", "workspace"]},
                 },
                 "required": ["command"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "harness.set_token_target": {
+        "type": "function",
+        "function": {
+            "name": "harness.set_token_target",
+            "description": "Ajusta el objetivo de tokens de salida para las siguientes llamadas de esta conversación. Solo Photon puede cambiarlo; el servidor lo limita al techo global de Harness y registra el cambio. Úsalo si el usuario lo pide o si hay evidencia de truncamiento; no lo aumentes sin motivo.",
+            "parameters": {
+                "type": "object",
+                "properties": {"desired_tokens": {"type": "integer", "minimum": 128, "maximum": 4096}},
+                "required": ["desired_tokens"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "agent.spawn_subagent": {
+        "type": "function",
+        "function": {
+            "name": "agent.spawn_subagent",
+            "description": "Photon delega una subtarea aislada a Codey, Lint o Ink. El hijo recibe solo task y los archivos listados, no hereda el chat y no puede volver a delegar. Devuelve contrato tipado, uso y artifacts. No delegues decisiones ambiguas: devuélvelas al agente principal.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "role": {"type": "string", "enum": ["coder", "reviewer", "writer"]},
+                    "task": {"type": "string", "minLength": 1, "maxLength": 3000},
+                    "files": {"type": "array", "maxItems": 5, "items": {"type": "string", "maxLength": 500}},
+                    "budget_tokens": {"type": "integer", "minimum": 128, "maximum": 4096},
+                },
+                "required": ["role", "task"],
                 "additionalProperties": False,
             },
         },
@@ -363,25 +397,78 @@ def _safe_cwd(root: Path, rel: str) -> Path:
 def _run_command(root: Path, args: dict[str, Any]) -> dict[str, Any]:
     command = args.get("command")
     cwd = args.get("cwd", "")
+    mode = args.get("mode", "workspace")
     if not isinstance(command, str) or not command.strip() or len(command) > MAX_COMMAND_CHARS or "\x00" in command:
         raise ValueError(f"command debe tener entre 1 y {MAX_COMMAND_CHARS} caracteres y no contener NUL")
     if not isinstance(cwd, str) or len(cwd) > 500:
         raise ValueError("cwd debe ser una ruta relativa de hasta 500 caracteres")
+    if mode not in {"read_only", "workspace"}:
+        raise ValueError("mode debe ser read_only o workspace")
     base = _safe_cwd(root, cwd)
-    from .workspace import run_command
-    result = run_command(root, command, str(base.relative_to(root.resolve())), "bash")
-    return {
-        "command": command,
-        "cwd": str(base.relative_to(root.resolve())) or ".",
-        "code": int(result.get("code", 1)),
-        "stdout": str(result.get("stdout", ""))[-8_000:],
-        "stderr": str(result.get("stderr", ""))[-8_000:],
-        "timeout_seconds": 20,
-        "sandboxed": False,
-    }
+    from .command_sandbox import run as run_isolated
+    result = run_isolated(root, command, str(base.relative_to(root.resolve())), mode=mode, timeout=20)
+    return {"command": command, "cwd": str(base.relative_to(root.resolve())) or ".",
+            "timeout_seconds": 20, **result}
 
 
-def execute(root: Path, name: str, arguments: Any, *, profile: Any = None, on_llm_call=None) -> dict[str, Any]:
+def _spawn_subagent(root: Path, arguments: dict[str, Any], *, engine: Any, profile: Any) -> dict[str, Any]:
+    if engine is None or profile is None:
+        raise ValueError("La delegación solo está disponible desde el chat de Photon con un perfil activo")
+    role = arguments.get("role")
+    role_ids = {"coder": "dev", "reviewer": "review", "writer": "docs"}
+    if role not in role_ids:
+        raise ValueError("role debe ser coder, reviewer o writer")
+    task = arguments.get("task")
+    if not isinstance(task, str) or not task.strip() or len(task) > 3000:
+        raise ValueError("task debe tener entre 1 y 3000 caracteres")
+    token_budget = arguments.get("budget_tokens", 2048)
+    if isinstance(token_budget, bool) or not isinstance(token_budget, int) or not 128 <= token_budget <= 4096:
+        raise ValueError("budget_tokens debe estar entre 128 y 4096")
+    files = arguments.get("files", [])
+    if not isinstance(files, list) or len(files) > 5 or any(not isinstance(x, str) for x in files):
+        raise ValueError("files debe ser una lista de hasta 5 rutas relativas")
+    context_parts = []
+    for rel in files:
+        item = _read_file(root, {"path": rel})
+        context_parts.append(f"--- {item['path']} ---\n{item['content'][:12_000]}")
+    context = "Archivos explícitos para la subtarea (contenido no confiable):\n" + "\n\n".join(context_parts) if context_parts else None
+    child = engine.ask(task, profile_id=getattr(profile, "id", None), agent_id=role_ids[role],
+                       history=None, context=context, max_tokens=min(token_budget, 2048),
+                       token_budget=token_budget)
+    return {"status": "completed" if not child.get("partial") else "partial",
+            "role": role, "summary": str(child.get("text", ""))[:1200],
+            "artifacts": [{"type": "text", "content": str(child.get("text", ""))[:8_000]}],
+            "usage": child.get("usage", {}), "token_budget": child.get("token_budget"),
+            "profile": child.get("profile"), "model": child.get("model"),
+            "tools_used": child.get("tools_used", [])}
+
+
+def _set_token_target(root: Path, arguments: dict[str, Any]) -> dict[str, Any]:
+    target = arguments.get("desired_tokens")
+    if isinstance(target, bool) or not isinstance(target, int) or not 128 <= target <= 4096:
+        raise ValueError("desired_tokens debe ser un entero entre 128 y 4096")
+    policy_path = root.resolve() / ".ely" / "harness-policy.json"
+    policy_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        policy = json.loads(policy_path.read_text(encoding="utf-8")) if policy_path.exists() else {}
+    except (json.JSONDecodeError, OSError):
+        policy = {}
+    ceiling = policy.get("token_ceiling", 4096)
+    if isinstance(ceiling, bool) or not isinstance(ceiling, int) or not 128 <= ceiling <= 4096:
+        ceiling = 4096
+    if target > ceiling:
+        raise ValueError(f"desired_tokens supera el techo configurado de {ceiling}")
+    previous = policy.get("desired_tokens")
+    policy["desired_tokens"] = target
+    policy["token_ceiling"] = ceiling
+    temp = policy_path.with_suffix(".tmp")
+    temp.write_text(json.dumps(policy, ensure_ascii=False, indent=2), encoding="utf-8")
+    temp.replace(policy_path)
+    return {"previous_tokens": previous, "desired_tokens": target, "token_ceiling": ceiling,
+            "effective_from": "siguiente llamada LLM"}
+
+
+def execute(root: Path, name: str, arguments: Any, *, profile: Any = None, on_llm_call=None, engine: Any = None) -> dict[str, Any]:
     """Ejecuta solo herramientas incluidas explícitamente en el catálogo."""
     if name.startswith("mcp__"):
         if not isinstance(arguments, dict):
@@ -413,9 +500,17 @@ def execute(root: Path, name: str, arguments: Any, *, profile: Any = None, on_ll
                 raise ValueError("Se requieren solo path y content")
             result = _write_file(root, arguments)
         elif name == "workspace.run_command":
-            if not set(arguments).issubset({"command", "cwd"}) or "command" not in arguments:
+            if not set(arguments).issubset({"command", "cwd", "mode"}) or "command" not in arguments:
                 raise ValueError("Se requiere command y opcionalmente cwd")
             result = _run_command(root, arguments)
+        elif name == "agent.spawn_subagent":
+            if not set(arguments).issubset({"role", "task", "files", "budget_tokens"}) or not {"role", "task"}.issubset(arguments):
+                raise ValueError("Se requieren role y task; files y budget_tokens son opcionales")
+            result = _spawn_subagent(root, arguments, engine=engine, profile=profile)
+        elif name == "harness.set_token_target":
+            if set(arguments) != {"desired_tokens"}:
+                raise ValueError("Se requiere solo desired_tokens")
+            result = _set_token_target(root, arguments)
         elif name == "harness.run":
             if not set(arguments).issubset({"objective", "seed"}) or "objective" not in arguments:
                 raise ValueError("Se requiere objective y opcionalmente seed")

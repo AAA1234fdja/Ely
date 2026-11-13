@@ -45,6 +45,12 @@
     if (!t) return null;
     return t.panes.find((p) => p.id === t.focus) || t.panes[0];
   }
+  function isolationMode() {
+    try {
+      const saved = localStorage.getItem("ely.terminalIsolationMode");
+      return ["read_only", "workspace", "full"].includes(saved) ? saved : "full";
+    } catch (e) { return "full"; }
+  }
 
   async function load() {
     if (S.ready) return S.info;
@@ -194,6 +200,8 @@
     log(prompt + " " + text);
     const trimmed = text.trim();
     if (!trimmed) { paint(); return; }
+    const mode = isolationMode();
+    const isCd = /^(cd)(\s|$)/.test(trimmed);
     if (trimmed === "clear" || trimmed === "cls" || trimmed === "Clear-Host") { p.rows = []; paint(); return; }
     if (trimmed === "exit") {
       const t = activeTerm();
@@ -201,9 +209,14 @@
       else kill();
       return;
     }
+    if (mode === "full" && !isCd && !window.confirm("Acceso total: este comando puede leer o modificar archivos del usuario y usar la red. ¿Ejecutarlo ahora?")) {
+      p.rows.push({ kind: "info", text: "Comando cancelado; no se ejecutó." });
+      paint();
+      return;
+    }
     p.busy = true; paint();
     try {
-      const r = await API.terminal(text, p.cwd, p.profile);
+      const r = await API.terminal(text, p.cwd, p.profile, mode, mode === "full");
       p.cwd = r.cwd || p.cwd;
       p.code = r.code == null ? 0 : r.code;
       if (r.stdout) { p.rows.push({ kind: "out", text: r.stdout.replace(/\n$/, "") }); log(r.stdout.replace(/\n$/, "")); }
@@ -358,6 +371,20 @@
     }, { cls: "vsc-tb-profile", text: prof.label, haspopup: true });
     label.appendChild(G().svg("chevronDown", 12));
     nodes.push(label);
+    const isolation = UI.el("select", {
+      class: "vsc-tb-isolation",
+      title: "Modo de aislamiento de comandos",
+      "aria-label": "Modo de aislamiento de comandos",
+      onchange: (e) => {
+        try { localStorage.setItem("ely.terminalIsolationMode", e.target.value); } catch (err) { /* noop */ }
+      }
+    }, [
+      UI.el("option", { value: "read_only", text: "Solo lectura" }),
+      UI.el("option", { value: "workspace", text: "Workspace aislado" }),
+      UI.el("option", { value: "full", text: "Acceso total" })
+    ]);
+    isolation.value = isolationMode();
+    nodes.push(isolation);
     const group = UI.el("div", { class: "vsc-tb-group" });
     group.appendChild(G().button("plus", T("term.new") + " (Ctrl+Shift+Ñ)", () => create()));
     group.appendChild(G().button("chevronDown", T("term.newMenu"), (e) => newMenu(e.currentTarget), { haspopup: true, size: 12, cls: "vsc-tb-caret" }));

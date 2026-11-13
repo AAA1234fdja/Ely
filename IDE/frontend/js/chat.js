@@ -13,6 +13,16 @@
     const S = ChatStore;
     const st = S.state;
     let unsub = null;
+    let qualityUpdating = false;
+    let selectorMenu = null;
+    let selectorButton = null;
+    let apiToggle = null;
+    let apiOptions = null;
+    let apiStatus = null;
+    let qualityToggle = null;
+    let qualityOptions = null;
+    let apiOpen = false;
+    let qualityOpen = false;
 
     const shell = UI.el("div", { class: "chat-shell" });
     const sidebar = UI.el("nav", { class: "chat-sidebar", "aria-label": t("chat.recents") });
@@ -298,6 +308,13 @@
       } else {
         UI.bindCopy(bubble);
       }
+      if (!isUser && msg.meta && msg.meta.qualityReport) {
+        const status = msg.meta.quality && msg.meta.quality.status;
+        body.appendChild(UI.el("div", {
+          class: "chat-quality-report chat-quality-" + (status || "unverified"),
+          role: "status", text: msg.meta.qualityReport
+        }));
+      }
       if (isUser && msg.sent_at) {
         body.appendChild(UI.el("div", { class: "chat-meta" }, [
           UI.el("span", { text: "📤 " + t("chat.sent") + ": " + I18N.fmtDateTime(msg.sent_at) })
@@ -332,40 +349,80 @@
 
     /* ---------------------------------------------------------- composer */
     const composer = UI.el("div", { class: "chat-composer" });
-    const ctxRow = UI.el("div", { class: "cc-context" });
-    const apiSelect = UI.el("select", {
-      class: "cc-select", title: t("chat.api"), "aria-label": t("chat.api"),
-      onchange: (e) => App.setProfile(e.target.value)
-    }, (App.profiles || []).map((p) => UI.el("option", { value: p.id, selected: p.id === App.profileId(), text: p.label })));
-    ctxRow.appendChild(UI.el("span", { class: "cc-ctx" }, [
-      UI.el("span", { "aria-hidden": "true", text: "◈" }),
-      UI.el("span", { class: "cc-ctx-label", text: t("chat.api") }), apiSelect
-    ]));
-    const workSelect = UI.el("select", {
-      class: "cc-select", title: t("chat.workLocation"), "aria-label": t("chat.workLocation"),
-      onchange: (e) => { if (window.Settings) Settings.set({ workLocation: e.target.value }); }
-    }, [UI.el("option", { value: "local", selected: true, text: t("chat.openStorage") })]);
-    ctxRow.appendChild(UI.el("span", { class: "cc-ctx" }, [UI.el("span", { "aria-hidden": "true", text: "🗀" }), workSelect]));
-    composer.appendChild(ctxRow);
+    const autoOption = UI.el("button", {
+      class: "cc-selector-choice cc-selector-auto active", type: "button", role: "menuitemradio", "aria-checked": "true",
+      onclick: () => closeSelectorMenu()
+    }, [
+      UI.el("span", { class: "cc-selector-check", "aria-hidden": "true", text: "✓" }),
+      UI.el("span", { class: "cc-selector-copy" }, [
+        UI.el("span", { class: "cc-selector-title", text: "Automático" }),
+        UI.el("span", { class: "cc-selector-subtitle", text: "Usa el modelo configurado para esta API" })
+      ])
+    ]);
+    apiToggle = UI.el("button", {
+      class: "cc-selector-choice", type: "button", "aria-expanded": "false", onclick: toggleApiMenu
+    }, [
+      UI.el("span", { class: "cc-selector-icon", "aria-hidden": "true", text: "◈" }),
+      UI.el("span", { class: "cc-selector-copy" }, [
+        UI.el("span", { class: "cc-selector-title", text: "API" }),
+        UI.el("span", { class: "cc-selector-subtitle cc-api-current", text: "" })
+      ]),
+      UI.el("span", { class: "cc-selector-arrow", "aria-hidden": "true", text: "›" })
+    ]);
+    apiOptions = UI.el("div", { class: "cc-api-options", role: "group", "aria-label": "APIs disponibles" });
+    apiStatus = UI.el("div", { class: "cc-selector-status", text: "" });
+    qualityToggle = UI.el("button", {
+      class: "cc-selector-choice", type: "button", "aria-expanded": "false", onclick: toggleQualityMenu
+    }, [
+      UI.el("span", { class: "cc-selector-icon", "aria-hidden": "true", text: "" }),
+      UI.el("span", { class: "cc-selector-copy" }, [
+        UI.el("span", { class: "cc-selector-title", text: "Nivel de calidad" }),
+        UI.el("span", { class: "cc-selector-subtitle cc-quality-current", text: "Mid" })
+      ]),
+      UI.el("span", { class: "cc-selector-arrow", "aria-hidden": "true", text: "›" })
+    ]);
+    qualityOptions = UI.el("div", { class: "cc-quality-options", role: "group", "aria-label": "Opciones de nivel de calidad" });
+    selectorButton = UI.el("button", {
+      class: "cc-ely-selector", type: "button", "aria-haspopup": "menu", "aria-expanded": "false",
+      onclick: toggleSelectorMenu
+    }, ["Ely", UI.el("span", { class: "cc-selector-chevron", "aria-hidden": "true", text: "⌄" })]);
+    selectorMenu = UI.el("div", { class: "cc-selector-menu", role: "menu", "aria-label": "Modelo, API y nivel de calidad" }, [
+      autoOption,
+      apiToggle,
+      apiOptions,
+      apiStatus,
+      UI.el("div", { class: "cc-selector-divider", "aria-hidden": "true" }),
+      qualityToggle,
+      qualityOptions
+    ]);
+    const selectorWrap = UI.el("div", { class: "cc-selector-wrap" }, [selectorButton, selectorMenu]);
 
-    const textarea = UI.el("textarea", { class: "cc-input", rows: 1, placeholder: t("chat.doAnything"), "aria-label": t("chat.doAnything") });
-    composer.appendChild(textarea);
+    renderSelector();
 
-    const bottomRow = UI.el("div", { class: "cc-bottom" });
     const attachBtn = UI.el("button", { class: "cc-plus", html: "＋", title: t("chat.attach"), "aria-label": t("chat.attach"), "aria-haspopup": "menu" });
-    const stopBtn = UI.el("button", { class: "cc-stop", text: t("chat.stop"), hidden: true, onclick: () => S.stop() });
-    const sendBtn = UI.el("button", { class: "cc-send", html: "↑", title: t("chat.send"), "aria-label": t("chat.send"), onclick: () => doSend() });
-    bottomRow.appendChild(attachBtn);
-    bottomRow.appendChild(UI.el("div", { style: { flex: "1" } }));
-    bottomRow.appendChild(stopBtn);
-    bottomRow.appendChild(sendBtn);
-    composer.appendChild(bottomRow);
+    const textarea = UI.el("textarea", { class: "cc-input", rows: 1, placeholder: t("chat.doAnything"), "aria-label": t("chat.doAnything") });
+    const sendBtn = UI.el("button", {
+      class: "cc-send", html: "↑", title: t("chat.send"), "aria-label": t("chat.send"),
+      onclick: () => st.busy ? S.stop() : doSend()
+    });
+    composer.appendChild(attachBtn);
+    composer.appendChild(textarea);
+    composer.appendChild(selectorWrap);
+    composer.appendChild(sendBtn);
 
     const plusMenu = buildPlusMenu();
     composer.appendChild(plusMenu);
     attachBtn.addEventListener("click", (e) => { e.stopPropagation(); plusMenu.classList.toggle("open"); });
     document.addEventListener("pointerdown", (e) => {
+      if (!document.body.contains(shell)) return;
       if (plusMenu.classList.contains("open") && !plusMenu.contains(e.target) && e.target !== attachBtn) plusMenu.classList.remove("open");
+      if (selectorMenu.classList.contains("open") && !selectorWrap.contains(e.target)) closeSelectorMenu();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (!document.body.contains(shell) || e.key !== "Escape" || !selectorMenu.classList.contains("open")) return;
+      if (qualityOpen) { qualityOpen = false; renderSelector(); }
+      else if (apiOpen) { apiOpen = false; renderSelector(); }
+      else closeSelectorMenu();
     });
 
     function plusItem(icon, title, desc, action) {
@@ -454,10 +511,119 @@
       return node;
     }
 
+    function renderSelector() {
+      if (!selectorMenu) return;
+      const profile = App.profile() || {};
+      const apiLabel = apiToggle && apiToggle.querySelector(".cc-api-current");
+      if (apiLabel) apiLabel.textContent = profile.label || "Seleccionar API";
+      if (apiToggle) apiToggle.setAttribute("aria-expanded", apiOpen ? "true" : "false");
+      if (selectorButton) {
+        selectorButton.textContent = "Ely";
+        selectorButton.appendChild(UI.el("span", { class: "cc-selector-chevron", "aria-hidden": "true", text: "⌄" }));
+        selectorButton.setAttribute("aria-expanded", selectorMenu.classList.contains("open") ? "true" : "false");
+        selectorButton.title = profile.label || "Ely · Modelo automático";
+      }
+      UI.clear(apiOptions);
+      apiOptions.classList.toggle("open", apiOpen);
+      apiStatus.textContent = "";
+      if (apiOpen) {
+        const profiles = Array.isArray(App.profiles) ? App.profiles : [];
+        if (!profiles.length) apiStatus.textContent = "No hay APIs configuradas.";
+        profiles.forEach((item) => {
+          const active = item.id === App.profileId();
+          apiOptions.appendChild(UI.el("button", {
+            class: "cc-api-option" + (active ? " active" : ""), type: "button", role: "menuitemradio",
+            "aria-checked": active ? "true" : "false", disabled: !!st.busy,
+            onclick: () => chooseProfile(item.id)
+          }, [
+            UI.el("span", { class: "cc-api-option-name", text: item.label || item.id }),
+            UI.el("span", { class: "cc-api-option-check", "aria-hidden": "true", text: "✓" })
+          ]));
+        });
+      }
+      renderQuality();
+    }
+
+    function renderQuality() {
+      if (!qualityOptions || !qualityToggle) return;
+      const quality = st.quality || {};
+      const levels = quality.levels || ["Xlow", "Low", "Mid", "Hight", "xHight", "Uhight", "Isabel te extraño"];
+      const current = quality.level || "Mid";
+      UI.clear(qualityOptions);
+      levels.forEach((level) => {
+        qualityOptions.appendChild(UI.el("button", {
+          class: "cc-quality-option" + (level === current ? " active" : ""), type: "button", role: "menuitemradio",
+          "aria-checked": level === current ? "true" : "false",
+          disabled: !st.quality || st.busy || !!quality.active || qualityUpdating,
+          onclick: () => changeQuality(level)
+        }, [
+          UI.el("span", { text: level }),
+          UI.el("span", { class: "cc-api-option-check", "aria-hidden": "true", text: "✓" })
+        ]));
+      });
+      const currentLabel = qualityToggle.querySelector(".cc-quality-current");
+      if (currentLabel) currentLabel.textContent = current;
+      qualityToggle.disabled = !st.quality || st.busy || !!quality.active || qualityUpdating;
+      qualityToggle.setAttribute("aria-expanded", qualityOpen ? "true" : "false");
+      qualityOptions.classList.toggle("open", qualityOpen);
+    }
+
+    function toggleSelectorMenu() {
+      selectorMenu.classList.toggle("open");
+      apiOpen = false;
+      qualityOpen = false;
+      renderSelector();
+    }
+
+    function closeSelectorMenu() {
+      selectorMenu.classList.remove("open");
+      apiOpen = false;
+      qualityOpen = false;
+      renderSelector();
+    }
+
+    function toggleApiMenu() {
+      apiOpen = !apiOpen;
+      qualityOpen = false;
+      renderSelector();
+    }
+
+    function toggleQualityMenu() {
+      qualityOpen = !qualityOpen;
+      apiOpen = false;
+      renderSelector();
+    }
+
+    function chooseProfile(profileId) {
+      if (!profileId || st.busy) return;
+      apiOpen = false;
+      qualityOpen = false;
+      if (profileId !== App.profileId()) App.setProfile(profileId);
+      else renderSelector();
+    }
+
+    async function changeQuality(selectedLevel) {
+      if (!st.quality || st.busy || qualityUpdating) return;
+      qualityUpdating = true;
+      qualityOpen = false;
+      renderQuality();
+      try { await S.setQuality(selectedLevel); }
+      catch (err) {
+        UI.toast("err", t("chat.apiError"), err.message || String(err));
+      } finally {
+        qualityUpdating = false;
+        renderSelector();
+      }
+    }
+
     function renderBusy() {
-      sendBtn.disabled = st.busy;
-      stopBtn.hidden = !st.busy;
+      sendBtn.disabled = false;
+      sendBtn.textContent = st.busy ? "■" : "↑";
+      sendBtn.title = st.busy ? t("chat.stop") : t("chat.send");
+      sendBtn.setAttribute("aria-label", sendBtn.title);
+      sendBtn.classList.toggle("is-stop", !!st.busy);
       newChatBtn.disabled = st.busy;
+      renderQuality();
     }
 
     async function doSend() {
@@ -485,7 +651,7 @@
     }
 
     /* ---------------------------------------------------------- init */
-    function renderAll() { renderProjects(); renderRecents(); renderContent(); renderBusy(); }
+    function renderAll() { renderProjects(); renderRecents(); renderContent(); renderBusy(); renderSelector(); }
     /* Se repinta mientras la vista siga en el documento (no depende de la
        ruta: el widget puede cambiar la conversación desde cualquier vista). */
     unsub = S.subscribe(() => { if (document.body.contains(shell)) renderAll(); });

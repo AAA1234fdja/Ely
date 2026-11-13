@@ -73,18 +73,46 @@ class WorkspaceToolsTest(unittest.TestCase):
                 result = agent_tools.execute(self.tmp, "workspace.write_file", {"path": path, "content": "x"})
                 self.assertFalse(result["ok"])
 
-    def test_run_command_uses_workspace_cwd_and_reports_not_sandboxed(self):
+    def test_run_command_uses_isolation_and_reports_diff_without_applying(self):
         (self.tmp / "src" / "nested").mkdir()
-        with patch("ely_cli.workspace.run_command", return_value={
-            "code": 0, "stdout": "7 tests passed", "stderr": ""
-        }) as runner:
+        isolated = {"ok": True, "code": 0, "stdout": "7 tests passed", "stderr": "",
+                    "sandboxed": True, "mode": "workspace", "diff": "--- a/app.py", "changes_applied": False}
+        with patch("ely_cli.command_sandbox.run", return_value=isolated) as runner:
             result = agent_tools.execute(self.tmp, "workspace.run_command", {
                 "command": "python -m pytest", "cwd": "src/nested"
             })
         self.assertTrue(result["ok"])
-        self.assertFalse(result["sandboxed"])
+        self.assertTrue(result["sandboxed"])
+        self.assertFalse(result["changes_applied"])
         self.assertEqual(result["stdout"], "7 tests passed")
-        runner.assert_called_once_with(self.tmp, "python -m pytest", "src/nested", "bash")
+        runner.assert_called_once_with(self.tmp, "python -m pytest", "src/nested", mode="workspace", timeout=20)
+
+    def test_run_command_fails_closed_when_os_sandbox_is_unavailable(self):
+        from ely_cli.command_sandbox import run
+        with (patch("ely_cli.command_sandbox.shutil.which", return_value=None),
+              patch("ely_cli.os_isolation.available", return_value=False)):
+            result = run(self.tmp, "cat /etc/passwd")
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["sandboxed"])
+        self.assertIn("bloqueada", result["error"])
+        self.assertNotIn("root:", result.get("stdout", ""))
+
+    def test_isolated_workspace_command_cannot_read_ely_secrets_and_returns_diff(self):
+        from ely_cli.command_sandbox import run
+        try:
+            from ely_cli.os_isolation import available
+            if not available():
+                self.skipTest("Landlock + network namespace unavailable")
+        except Exception:
+            self.skipTest("OS isolation unavailable")
+        secret = str(self.tmp / ".ely" / "keys.env")
+        result = run(self.tmp, f"cat {secret}; echo changed >> src/app.py", mode="workspace")
+        self.assertTrue(result["sandboxed"])
+        self.assertNotIn("secret", result["stdout"])
+        self.assertIn("Permission denied", result["stderr"])
+        self.assertIn("diff", result)
+        self.assertFalse(result["changes_applied"])
+        self.assertNotIn("changed", (self.tmp / "src" / "app.py").read_text())
 
     def test_run_command_rejects_traversal_and_private_cwd(self):
         for cwd in ("../", ".ely", "IDE/src"):
@@ -97,8 +125,117 @@ class WorkspaceToolsTest(unittest.TestCase):
     def test_unknown_tool_is_never_executed(self):
         self.assertFalse(agent_tools.execute(self.tmp, "shell.exec", {"command": "id"})["ok"])
 
+    def test_spawn_subagent_receives_only_explicit_context_and_budget(self):
+        from unittest.mock import Mock
+        profile = SimpleNamespace(id="active")
+        child = {"text": "review summary", "usage": {"total_tokens": 128},
+                 "partial": False, "profile": "active", "model": "m", "tools_used": ["workspace.read_file"]}
+        engine = Mock()
+        engine.ask.return_value = child
+        result = agent_tools.execute(self.tmp, "agent.spawn_subagent", {
+            "role": "reviewer", "task": "Review this module", "files": ["src/app.py"], "budget_tokens": 512
+        }, profile=profile, engine=engine)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["artifacts"][0]["content"], "review summary")
+        kwargs = engine.ask.call_args.kwargs
+        self.assertIsNone(kwargs["history"])
+        self.assertIn("src/app.py", kwargs["context"])
+        self.assertEqual(kwargs["max_tokens"], 512)
+        self.assertEqual(kwargs["token_budget"], 512)
+        self.assertNotIn("agent.spawn_subagent", __import__("ely_cli.agents", fromlist=["get_agent"]).get_agent("review").tools)
+
+    def test_only_photon_can_adjust_bounded_token_target(self):
+        from ely_cli.agents import get_agent
+        photon = {x["function"]["name"] for x in agent_tools.schemas_for(get_agent("photon").tools)}
+        codey = {x["function"]["name"] for x in agent_tools.schemas_for(get_agent("dev").tools)}
+        self.assertIn("harness.set_token_target", photon)
+        self.assertNotIn("harness.set_token_target", codey)
+        result = agent_tools.execute(self.tmp, "harness.set_token_target", {"desired_tokens": 2048})
+        self.assertTrue(result["ok"])
+        policy = json.loads((self.tmp / ".ely" / "harness-policy.json").read_text())
+        self.assertEqual(policy["desired_tokens"], 2048)
+        invalid = agent_tools.execute(self.tmp, "harness.set_token_target", {"desired_tokens": 9999})
+        self.assertFalse(invalid["ok"])
+
+    def test_token_target_tool_applies_to_next_chat_round(self):
+        engine = Engine(self.tmp)
+        profile = SimpleNamespace(id="p", model="m", max_tokens=1024, api_key="", provider="test", endpoint=lambda: "")
+        schema = agent_tools.schemas_for(["harness.set_token_target"])
+        responses = [
+            llm.LLMResult(text="", tool_calls=[{"id": "t", "name": "harness.set_token_target",
+                                                   "arguments": {"desired_tokens": 2048}}]),
+            llm.LLMResult(text="done", model="m"),
+        ]
+        seen = []
+        def complete(_profile, _messages, **kwargs):
+            seen.append(kwargs.get("max_tokens"))
+            return responses.pop(0)
+        with (patch.object(engine, "profile", return_value=profile),
+              patch.object(engine, "_tool_specs", return_value=schema),
+              patch("ely_cli.engine.llm.complete", side_effect=complete),
+              patch("ely_cli.engine._task_tool_budget", return_value=(2, 4))):
+            result = engine.ask("adjust tokens", agent_id="photon")
+        self.assertEqual(result["text"], "done")
+        self.assertEqual(seen, [1024, 2048])
+
+    def test_total_token_budget_caps_each_round(self):
+        engine = Engine(self.tmp)
+        profile = SimpleNamespace(id="p", model="m", max_tokens=1024, api_key="", provider="test", endpoint=lambda: "")
+        schema = [{"type": "function", "function": {"name": "workspace.list_files", "parameters": {"type": "object"}}}]
+        responses = [
+            llm.LLMResult(text="", tool_calls=[{"id": "t", "name": "workspace.list_files", "arguments": {}}],
+                          usage=llm.Usage(prompt_tokens=64, completion_tokens=64, total_tokens=128)),
+            llm.LLMResult(text="done", model="m", usage=llm.Usage(prompt_tokens=64, completion_tokens=64, total_tokens=128)),
+        ]
+        seen = []
+        def complete(_profile, _messages, **kwargs):
+            seen.append(kwargs["max_tokens"])
+            return responses.pop(0)
+        with (patch.object(engine, "profile", return_value=profile),
+              patch.object(engine, "_tool_specs", return_value=schema),
+              patch.object(engine, "_append_tool_turn", return_value=[("workspace.list_files", {})]),
+              patch("ely_cli.engine.llm.complete", side_effect=complete),
+              patch("ely_cli.engine._task_tool_budget", return_value=(2, 4))):
+            result = engine.ask("inspect", agent_id="photon", token_budget=256)
+        self.assertEqual(seen, [256, 128])
+        self.assertEqual(result["token_budget"], 256)
+        self.assertEqual(result["usage"]["total_tokens"], 256)
+
+    def test_tool_budget_returns_partial_instead_of_aborting(self):
+        engine = Engine(ROOT)
+        tools = [{"type": "function", "function": {"name": "workspace.read_file", "parameters": {"type": "object"}}}]
+        response = llm.LLMResult(text="", tool_calls=[
+            {"id": "a", "name": "workspace.read_file", "arguments": {"path": "README.md"}},
+            {"id": "b", "name": "workspace.read_file", "arguments": {"path": "README.md"}},
+        ])
+        with (patch("ely_cli.engine._task_tool_budget", return_value=(1, 1)),
+              patch.object(engine, "_tool_specs", return_value=tools),
+              patch("ely_cli.engine.llm.complete", return_value=response)):
+            result = engine.ask("inspect", agent_id="photon")
+        self.assertTrue(result["partial"])
+        self.assertIn("Resultado parcial", result["text"])
+        self.assertEqual(result["tool_budget"], {"rounds": 1, "calls": 1})
+
 
 class ToolCallingProtocolTest(unittest.TestCase):
+    def test_harness_retries_empty_truncated_completion_with_more_tokens(self):
+        profile = SimpleNamespace(max_tokens=300, model="m", temperature=0.2)
+        backend = integrations._ProfileBackend(profile, max_calls=4)
+        seen = []
+        responses = [
+            llm.LLMResult(text="", finish_reason="length", usage=llm.Usage(completion_tokens=300)),
+            llm.LLMResult(text='{"veredicto":"aprobado"}', finish_reason="stop", usage=llm.Usage(completion_tokens=40)),
+        ]
+        def fake_complete(_profile, _messages, **kwargs):
+            seen.append(kwargs["max_tokens"])
+            return responses.pop(0)
+        with patch("ely_cli.integrations.llm.complete", side_effect=fake_complete):
+            result = backend.complete("review this", system="reviewer")
+        self.assertIn("veredicto", result)
+        self.assertEqual(seen, [300, 600])
+        self.assertEqual(backend.calls, 2)
+
     def test_extract_openai_and_anthropic_tool_calls(self):
         data = {"choices": [{"message": {"tool_calls": [{
             "id": "c1", "function": {"name": "workspace.list_files", "arguments": "{}"}
@@ -158,9 +295,11 @@ class ToolCallingProtocolTest(unittest.TestCase):
                 result = integrations.run_harness_candy(root, profile, "Build a small plan", seed=2)
             self.assertEqual(result["tasks"][0]["artifact"], "agent artifact")
             self.assertGreaterEqual(result["model_calls"], 2)
-            self.assertLessEqual(result["model_calls"], 12)
+            self.assertLessEqual(result["model_calls"], 64)
             self.assertTrue(all(call[1]["model"] == "selected-model" for call in calls))
-            self.assertEqual(result["adaptation_budget"], "disabled by default; no adaptation probes were run")
+            self.assertTrue(result["adaptation_budget"]["enabled"])
+            self.assertEqual(result["adaptation_budget"]["token_target"], 128)
+            self.assertLessEqual(result["adaptation_budget"]["probe_units_spent"], 9)
 
     def test_anthropic_payload_maps_calls_and_results(self):
         profile = SimpleNamespace(model="claude", temperature=0.2, max_tokens=100, provider="anthropic")

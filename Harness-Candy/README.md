@@ -68,7 +68,7 @@ stdlib, sin guardar claves en el repo):
 
 ```bash
 export XKIRO_API_KEY="sk-..."                    # tu clave (variable de entorno, NUNCA en el codigo)
-export XKIRO_BASE_URL="https://api.xkiro.ai/v1"  # opcional, ese es el default
+export XKIRO_BASE_URL="https://api.xkiro.com/v1"  # opcional, ese es el default
 export XKIRO_MODEL="nombre-del-modelo"           # opcional
 python examples/demo_xkiro.py                    # ping al modelo + run_task con adaptador Harness^2
 ```
@@ -84,7 +84,7 @@ python examples/demo_xkiro.py                    # ping al modelo + run_task con
 | §3/§5.3 Protocolos tipados y versionados `yev/zev/xev/wev`, rechazo de malformados | `protocols.py` |
 | §5 Ec. (1) score Q(a); §9 criterios de aceptación medibles | `quality.py` (`score_q`), `components.py` (`WEV`) |
 | §5 Ec. (2) decisión estadística candidato vs. referencia (m corridas) | `quality.py` (`compose_delta`, `should_adopt`) |
-| §2.2/§5/§12 Harness²: 8 componentes editables, ciclo Propose→Probe→Compose | `harness.py` (`Harness`, `Harness2Adapter`) |
+| §2.2/§5/§12 Harness²: componentes editables + objetivo `max_tokens`, ciclo Propose→Probe→Compose | `harness.py` (`Harness`, `Harness2Adapter`) |
 | §5 Ec. (3) costo de adaptación y presupuestos; reutilización de harness | `harness.py` (`Budget`, `HarnessStore`) |
 | §5 Listado 1 `run_task` | `runner.py` (`run_task`) |
 | §6 Pool de claves/modelos por rol (Nivel 3) | `pool.py` |
@@ -107,12 +107,12 @@ ecuación 2).
 src/harness_candy/
   protocols.py    yev/zev/xev/wev tipados y versionados (rechazo de malformados)
   quality.py      Q(a) ec.(1), regla ec.(2), TraceLog JSONL, RegressionGuard
-  harness.py      Harness (8 componentes), HarnessStore, Budget ec.(3), adaptador P-P-C
+  harness.py      Harness (8 componentes + objetivo max_tokens), HarnessStore, Budget ec.(3), adaptador P-P-C
   memory.py       VariableMemory (session.state) + KnowledgeMemory (largo plazo)
   pool.py         ModelPool: modelo y clave por rol, cuotas, rotación
   dag.py          TaskDAG + DAGExecutor (paralelo por capas, reintentos, escala)
   security.py     SecurityGate: inyección de instrucciones (entrada), PII/secretos (salida)
-  sandbox.py      run_sandboxed: cwd efímero, timeout, red aislada (unshare -rn)
+  sandbox.py      run_sandboxed: filesystem Landlock, red aislada (unshare -rn), fail-closed
   agents.py       Agent/LLMBackend model-agnostic + SecurityScanAgent (demo)
   components.py   ISA, YEV, ZEV, XEV, WEV, ELY
   runner.py       run_task (Listado 1) + CoworkRunner (flujo de 8 pasos)
@@ -261,9 +261,11 @@ no solo el resultado final. Bench: `python examples/bench_escalabilidad.py 24`.
 
 ## Notas de seguridad
 
-- El código generado por XEV **siempre** corre en `sandbox.run_sandboxed`:
-  directorio efímero, timeout, entorno mínimo (sin credenciales heredadas) y,
-  si el sistema lo permite, namespace de red propio (`unshare -rn`).
+- El código/comando de XEV corre en `sandbox.run_sandboxed` con directorio
+  efímero, entorno mínimo sin credenciales, filesystem confinado por Landlock y
+  namespace de red (`unshare -rn`). Si Landlock o el namespace no están disponibles,
+  falla cerrado y no ejecuta el comando. Solo se exponen los archivos temporales
+  solicitados explícitamente; el workspace real y sus claves quedan fuera.
 - Las claves API nunca se almacenan: el pool referencia variables de entorno.
 - Las puertas de entrada/salida bloquean inyección de instrucciones y fugas de
   PII/secretos (objetivo del documento: seguridad ≥ 0.98, fuga de PII = 0).

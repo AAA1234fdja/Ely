@@ -13,6 +13,7 @@ otra clave API. Aqui la abstraccion es minima y sin dependencias:
 """
 from __future__ import annotations
 
+import inspect
 import json
 import re
 import sys
@@ -104,7 +105,15 @@ class Agent:
     def run(self, task: Task, harness: Harness | None = None, seed: int = 0) -> Artifact:
         h = harness or self.default_harness
         prompt = self.build_prompt(task, h)
-        raw = self.backend.complete(prompt, system=h.system_prompt, model=self.model, seed=seed)
+        call = self.backend.complete
+        kwargs = {"system": h.system_prompt, "model": self.model, "seed": seed}
+        try:
+            parameters = inspect.signature(call).parameters
+        except (TypeError, ValueError):
+            parameters = {}
+        if "max_tokens" in parameters:
+            kwargs["max_tokens"] = max(128, min(4096, int(h.max_tokens_target)))
+        raw = call(prompt, **kwargs)
         meta = {"harness": h.label(), "model": self.model, "seed": seed}
         usage = getattr(self.backend, "last_usage", None) or {}
         if usage.get("total_tokens"):
@@ -147,7 +156,8 @@ class SecurityScanAgent(Agent):
         compile_errors = []
         for p in files:
             if p.suffix == ".py":
-                r = run_sandboxed([sys.executable, "-m", "py_compile", str(p)], timeout=15)
+                r = run_sandboxed([sys.executable, "-m", "py_compile", "/workspace/" + p.name],
+                                   timeout=15, extra_files={p.name: p.read_text(encoding="utf-8", errors="ignore")})
                 if not r.ok:
                     compile_errors.append({"file": str(p), "error": r.stderr.strip()[-500:]})
 

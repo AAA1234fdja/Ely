@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import statistics
+import threading
 import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -34,6 +35,7 @@ HARNESS_COMPONENTS = (
     "skills",
     "scripts",
     "plugins",
+    "max_tokens_target",
 )
 
 
@@ -50,6 +52,7 @@ class Harness:
     skills: list[str] = field(default_factory=list)
     scripts: list[str] = field(default_factory=list)
     plugins: list[str] = field(default_factory=list)
+    max_tokens_target: int = 1200
 
     def fingerprint(self) -> str:
         """Huella estable del harness (para trazabilidad y versionado)."""
@@ -172,16 +175,28 @@ class Budget:
     k: int = 2  # --k N: N generales + N de dominio ademas de la referencia
     m: int = 3  # m >= 3 corridas por configuracion
     spent_adapt: float = 0.0
+    _lock: Any = field(default_factory=threading.Lock, repr=False, compare=False)
 
     def probe_cost(self, c_a: float = 1.0) -> float:
         """Costo de sondear un agente: referencia + 2k candidatos, m veces."""
         return (1 + 2 * self.k) * self.m * c_a
 
     def allows_probe(self, c_a: float = 1.0) -> bool:
-        return self.spent_adapt + self.probe_cost(c_a) <= self.beta * self.total
+        with self._lock:
+            return self.spent_adapt + self.probe_cost(c_a) <= self.beta * self.total
+
+    def try_charge(self, c_a: float = 1.0) -> bool:
+        """Atomically reserve one probe batch under the global adaptation cap."""
+        with self._lock:
+            cost = self.probe_cost(c_a)
+            if self.spent_adapt + cost > self.beta * self.total:
+                return False
+            self.spent_adapt += cost
+            return True
 
     def charge(self, c_a: float = 1.0) -> None:
-        self.spent_adapt += self.probe_cost(c_a)
+        with self._lock:
+            self.spent_adapt += self.probe_cost(c_a)
 
     def estimate_adapt_cost(self, n_agents: int, reuse_rate: float, c_a: float = 1.0) -> float:
         """Cota de la ecuacion (3) para n agentes con tasa de reutilizacion r."""
@@ -234,7 +249,13 @@ class RuleBasedProposer:
     }
 
     def __call__(self, h0: Harness, task_kind: str, k: int) -> list[Harness]:
-        general = self.GENERAL_MUTATIONS[:k]
+        general = list(self.GENERAL_MUTATIONS[:k])
+        # Una dimensión gradual de Harness² es el presupuesto de salida. Solo se
+        # propone un aumento acotado (25% o 128 tokens), nunca permiso/acceso.
+        if general:
+            general[-1] = {"max_tokens_target": min(4096, max(
+                h0.max_tokens_target + 128, int(h0.max_tokens_target * 1.25)
+            ))}
         # --k N explora N generales + N de dominio; si el kind no tiene
         # mutaciones de dominio definidas, se rotan las generales con offset
         # para que los 2k candidatos sean siempre distintos.
@@ -302,7 +323,8 @@ def merge_harnesses(h0: Harness, winners: list[Harness]) -> Harness:
             memory=dict(w.memory),
         )
     merged = replace(merged, system_prompt=winners[0].system_prompt or h0.system_prompt,
-                     tool_guidance=winners[0].tool_guidance or h0.tool_guidance)
+                     tool_guidance=winners[0].tool_guidance or h0.tool_guidance,
+                     max_tokens_target=winners[0].max_tokens_target or h0.max_tokens_target)
     return merged
 
 

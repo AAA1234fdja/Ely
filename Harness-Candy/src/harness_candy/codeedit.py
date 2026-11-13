@@ -230,7 +230,8 @@ def validate_code(src: str, *, compile_sandbox: bool = True) -> dict:
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "edit_check.py"
             p.write_text(src, encoding="utf-8")
-            r = run_sandboxed([sys.executable, "-m", "py_compile", str(p)], timeout=15)
+            r = run_sandboxed([sys.executable, "-m", "py_compile", "/workspace/" + p.name],
+                               timeout=15, extra_files={p.name: src})
             resultado["sandbox_ok"] = r.ok
             if not r.ok:
                 raise CodeEditError(f"py_compile en sandbox fallo: {r.stderr[-300:]}")

@@ -263,10 +263,11 @@ def default_registry(root: str | Path = ".") -> ToolRegistry:
         )
     )
     def _py_compile(args: dict) -> dict:
-        # la ruta se resuelve dentro del root y se pasa absoluta al sandbox
-        # (el sandbox usa un cwd efimero, una ruta relativa no existiria)
+        # Solo se copia el archivo solicitado al filesystem efímero del sandbox.
         p = _dentro(args["path"])
-        r = run_sandboxed(["python3", "-m", "py_compile", str(p)], timeout=15.0)
+        source = p.read_text(encoding="utf-8", errors="ignore")
+        r = run_sandboxed(["python3", "-m", "py_compile", "/workspace/" + p.name],
+                          timeout=15.0, extra_files={p.name: source})
         if not r.ok:
             raise ToolTimeoutError(f"py_compile fallo (timeout={r.timed_out}): {r.stderr[-300:]}")
         return {"returncode": r.returncode, "network_isolated": r.network_isolated}

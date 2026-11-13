@@ -86,6 +86,14 @@ class TestBudget(unittest.TestCase):
         self.assertTrue(b.justifies_probe(0.2, value_per_q=100, c_a=1.0))
         self.assertFalse(b.justifies_probe(0.01, value_per_q=1, c_a=1.0))
 
+    def test_try_charge_es_atomico_bajo_concurrencia(self):
+        from concurrent.futures import ThreadPoolExecutor
+        b = Budget(total=36, beta=0.25, k=1, m=3)  # solo una sonda de 9 unidades
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            outcomes = list(pool.map(lambda _n: b.try_charge(), range(16)))
+        self.assertEqual(sum(outcomes), 1)
+        self.assertEqual(b.spent_adapt, 9)
+
 
 class TestAdaptadorPPC(unittest.TestCase):
     def setUp(self):
